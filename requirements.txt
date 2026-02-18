@@ -1,0 +1,10 @@
+streamlit
+openai
+fal-client
+requests
+python-dotenv
+markdown
+markdown-it-py
+Pillow
+playwright
+openpyxl

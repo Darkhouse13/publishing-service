@@ -1,0 +1,248 @@
+/*
+Theme Name: The Sunday Patio
+Theme URI: https://example.com/the-sunday-patio
+Author: The Sunday Patio
+Author URI: https://example.com
+Description: A dynamic classic WordPress theme for The Sunday Patio blog.
+Version: 1.0.3
+Requires at least: 6.4
+Tested up to: 6.7
+Requires PHP: 7.4
+Text Domain: the-sunday-patio
+*/
+
+body {
+    background-color: #f9f8f6;
+    color: #2d2d2d;
+    -webkit-font-smoothing: antialiased;
+}
+
+.editorial-italic {
+    font-family: "Playfair Display", serif;
+    font-style: italic;
+}
+
+.hover-lift {
+    transition: transform 0.3s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+.hover-lift:hover {
+    transform: translateY(-2px);
+}
+
+.ad-pattern {
+    background-image: repeating-linear-gradient(
+        45deg,
+        #e5e5e5 0px,
+        #e5e5e5 2px,
+        #f5f5f5 2px,
+        #f5f5f5 8px
+    );
+}
+
+.primary-menu a {
+    border-bottom: 2px solid transparent;
+    color: #2d2d2d;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    padding-bottom: 0.25rem;
+    text-transform: uppercase;
+    transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.primary-menu a:hover {
+    border-color: #e07a5f;
+    color: #e07a5f;
+}
+
+.site-footer {
+    background: #2a402e;
+    color: #f9f8f6;
+}
+
+.site-footer .footer-nav-title {
+    color: #e07a5f;
+}
+
+.site-footer .footer-menu {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: 1fr;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+@media (min-width: 640px) {
+    .site-footer .footer-menu {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1024px) {
+    .site-footer .footer-menu {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+.site-footer .footer-menu a {
+    color: rgba(249, 248, 246, 0.85);
+    font-size: 0.9rem;
+    transition: color 0.2s ease;
+}
+
+.site-footer .footer-menu a:hover {
+    color: #ffffff;
+}
+
+/* Fallback typography for post/page content when Tailwind prose styles are unavailable. */
+.prose {
+    color: #2d2d2d;
+    font-size: 1.125rem;
+    line-height: 1.8;
+}
+
+.prose > * + * {
+    margin-top: 1.15em;
+}
+
+.prose p {
+    margin: 0;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+    color: #1f2937;
+    font-family: "Playfair Display", serif;
+    line-height: 1.25;
+    margin: 1.6em 0 0.65em;
+}
+
+.prose h1 {
+    font-size: 2.25rem;
+    font-weight: 700;
+}
+
+.prose h2 {
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.prose h3 {
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.prose h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.prose ul,
+.prose ol {
+    margin: 1em 0;
+    padding-left: 1.4em;
+}
+
+.prose ul {
+    list-style: disc;
+}
+
+.prose ol {
+    list-style: decimal;
+}
+
+.prose li {
+    margin: 0.45em 0;
+}
+
+.prose li > ul,
+.prose li > ol {
+    margin-top: 0.45em;
+}
+
+.prose strong {
+    color: #111827;
+    font-weight: 700;
+}
+
+.prose em {
+    font-style: italic;
+}
+
+.prose a {
+    color: #2a402e;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.prose a:hover {
+    color: #3a5a40;
+}
+
+.prose blockquote {
+    border-left: 4px solid #d1d5db;
+    color: #374151;
+    margin: 1.35em 0;
+    padding-left: 1em;
+}
+
+.prose code {
+    background: #f3f4f6;
+    border-radius: 4px;
+    font-size: 0.92em;
+    padding: 0.1em 0.35em;
+}
+
+.prose pre {
+    background: #111827;
+    border-radius: 8px;
+    color: #f9fafb;
+    font-size: 0.95em;
+    line-height: 1.6;
+    overflow-x: auto;
+    padding: 1em;
+}
+
+.prose pre code {
+    background: transparent;
+    border-radius: 0;
+    color: inherit;
+    padding: 0;
+}
+
+.prose img {
+    border-radius: 8px;
+    height: auto;
+    max-width: 100%;
+}
+
+.prose figure {
+    margin: 1.5em 0;
+}
+
+.prose figure img {
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .prose {
+        font-size: 1.03rem;
+        line-height: 1.75;
+    }
+
+    .prose h1 {
+        font-size: 1.95rem;
+    }
+
+    .prose h2 {
+        font-size: 1.7rem;
+    }
+
+    .prose h3 {
+        font-size: 1.4rem;
+    }
+}
