@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-# Compatibility alias for explicit PinClicks naming.
-from pinterest_scraper import (  # noqa: F401
-    SCRAPE_RETRY_ATTEMPTS,
-    CaptchaCheckpointRequired,
-    ScraperError,
-    build_top_pins_url,
-    scrape_seed,
-)
+from _module_shim import load
+
+_module = load(__name__, "automating_wf.scrapers.pinclicks")

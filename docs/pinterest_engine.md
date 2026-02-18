@@ -35,7 +35,7 @@ This workflow does not generate a Pinterest ZIP package.
 - `PINTEREST_PINCLICKS_WINNERS_PER_RUN` default `5`
 - `PINTEREST_STORAGE_STATE_PATH` default `%USERPROFILE%/.codex/secrets/pinterest_state.json`
 - `PINCLICKS_STORAGE_STATE_PATH` default `%USERPROFILE%/.codex/secrets/pinclicks_state.json`
-- `PINTEREST_CSV_PATH_TEMPLATE` default `pinterest_bulk_upload_{blog_suffix}.csv`
+- `PINTEREST_CSV_PATH_TEMPLATE` default `artifacts/exports/pinterest_bulk_upload_{blog_suffix}.csv`
 - `PINTEREST_CSV_CADENCE_MINUTES` default `240`
 - `FAL_MODEL_PIN` fallback to `FAL_MODEL`
 - `WP_PUBLIC_POST_URL_TEMPLATE_<BLOG_SUFFIX>` default `{site_url}/{slug}/`

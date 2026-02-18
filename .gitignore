@@ -5,3 +5,9 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+artifacts/
+.venv/
+venv/
+src/**/__pycache__/
+pinterest_bulk_upload_*.csv
+pinterest_bulk_upload_*.csv.lock
