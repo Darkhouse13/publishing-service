@@ -14,6 +14,7 @@ from automating_wf.engine.pipeline import (
     MANIFEST_NAME,
     RUN_ROOT,
     SUMMARY_NAME,
+    TERMINAL_WINNER_STATUSES,
     TRENDS_TOP_KEYWORDS_FILE,
     build_generation_result_from_manifest_entry,
     collect_pinclicks_data_sync,
@@ -226,7 +227,7 @@ def _find_cached_winners_file(run_dir: Path) -> Path | None:
 def _detect_resume_stage(run_dir: Path) -> int:
     """Infer wizard stage from existing run artifacts."""
     entries = _manifest_entries(run_dir)
-    if any(str(item.get("status", "")).strip() in {"csv_appended", "wp_published", "csv_failed"} for item in entries):
+    if any(str(item.get("status", "")).strip() in TERMINAL_WINNER_STATUSES for item in entries):
         return STAGE_GENERATION
     winners_file = _find_cached_winners_file(run_dir)
     scores_file = run_dir / "pinclicks_analysis" / "pinclicks_keyword_scores.json"

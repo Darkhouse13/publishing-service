@@ -38,6 +38,7 @@ This workflow does not generate a Pinterest ZIP package.
 - `PINTEREST_CSV_PATH_TEMPLATE` default `artifacts/exports/pinterest_bulk_upload_{blog_suffix}.csv`
 - `PINTEREST_CSV_CADENCE_MINUTES` default `240`
 - `FAL_MODEL_PIN` fallback to `FAL_MODEL`
+- `ARTICLE_VALIDATOR_REPAIR_PROMPT` optional inline override for the article validator repair system prompt
 - `WP_PUBLIC_POST_URL_TEMPLATE_<BLOG_SUFFIX>` default `{site_url}/{slug}/`
 
 ## Example seed map

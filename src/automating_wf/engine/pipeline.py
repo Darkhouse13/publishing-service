@@ -25,7 +25,18 @@ from automating_wf.config.blogs import (
     resolve_blog_profile,
     suggest_primary_category,
 )
-from automating_wf.content.generators import GenerationError, generate_article, generate_image
+from automating_wf.content.generators import (
+    ArticleValidationError,
+    GenerationError,
+    generate_article,
+    generate_image,
+)
+from automating_wf.content.validator import (
+    ArticleValidationFinalError,
+    ArticleValidatorError,
+    load_repair_system_prompt,
+    validate_article_with_repair,
+)
 from automating_wf.analysis.pinclicks import PinClicksAnalysisError, rank_pinclicks_keywords
 from automating_wf.analysis.pinterest import AnalysisError, InsufficientSignalError, analyze_seed
 from automating_wf.design.pinterest import ImageDesignError, generate_pinterest_image
@@ -63,6 +74,7 @@ TERMINAL_WINNER_STATUSES = {
     "csv_appended",
     "wp_published",
     "csv_failed",
+    "article_failed",
     "insufficient_signal",
     "analysis_failed",
     "image_failed",
@@ -74,6 +86,7 @@ TERMINAL_PINCLICKS_CACHE_STATUSES = {
     "winner_processed",
     "wp_published",
     "csv_appended",
+    "article_failed",
     "analysis_failed",
     "image_failed",
     "wp_failed",
@@ -88,6 +101,7 @@ class EngineError(RuntimeError):
 FULL_SUCCESS_STATUSES = {"csv_appended"}
 PARTIAL_SUCCESS_STATUSES = {"csv_failed", "wp_published"}
 FAILED_PRE_PUBLISH_STATUSES = {
+    "article_failed",
     "analysis_failed",
     "image_failed",
     "wp_failed",
@@ -761,6 +775,7 @@ def _process_winner(
     scrape_result: SeedScrapeResult,
     trend_rank: int,
     pinclicks_rank: int,
+    repair_system_prompt: str,
     publish_status: str = "draft",
 ) -> dict[str, Any]:
     seed_keyword = scrape_result.seed_keyword
@@ -836,38 +851,104 @@ def _process_winner(
             "failure_stage": "analysis_failed",
         }
 
-    try:
-        article_payload = generate_article(
-            topic=brain_output.primary_keyword,
-            vibe=brain_output.cluster_label,
-            blog_profile=resolve_blog_profile(blog_name),
-            focus_keyword=brain_output.primary_keyword,
-        )
-    except Exception as exc:
+    def _article_failed_result(
+        *,
+        error: str,
+        generation_errors: list[str] | None = None,
+        validator_attempts: list[dict[str, Any]] | None = None,
+        validator_errors: list[str] | None = None,
+    ) -> dict[str, Any]:
+        details = {
+            "error": str(error or "").strip() or "article_failed",
+            "generation_errors": list(generation_errors or []),
+            "validator_attempts": list(validator_attempts or []),
+            "validator_errors": list(validator_errors or []),
+        }
         _append_manifest(
             run_dir,
             RunManifestEntry.create(
                 run_id=run_id,
                 blog_suffix=blog_suffix,
                 seed_keyword=seed_keyword,
-                status="wp_failed",
+                status="article_failed",
                 primary_keyword=brain_output.primary_keyword,
                 idempotency_key=f"{blog_suffix}|{seed_keyword}|{brain_output.primary_keyword}",
-                failure_stage="wp_failed",
-                source_stage="wordpress",
+                failure_stage="article_failed",
+                source_stage="generation",
                 source_file=scrape_result.source_file,
                 keyword_rank_trends=trend_rank,
                 keyword_rank_pinclicks=pinclicks_rank,
-                details={"error": str(exc)},
+                details=details,
             ),
         )
         return {
             "keyword": seed_keyword,
             "status": "failed",
-            "error": str(exc),
-            "failure_stage": "wp_failed",
+            "error": details["error"],
+            "failure_stage": "article_failed",
             "primary_keyword": brain_output.primary_keyword,
+            "generation_errors": details["generation_errors"],
+            "validator_attempts": details["validator_attempts"],
+            "validator_errors": details["validator_errors"],
         }
+
+    try:
+        blog_profile = resolve_blog_profile(blog_name)
+    except Exception as exc:
+        return _article_failed_result(error=str(exc))
+
+    article_payload: dict[str, str] | None = None
+    generation_errors: list[str] = []
+    try:
+        article_payload = generate_article(
+            topic=brain_output.primary_keyword,
+            vibe=brain_output.cluster_label,
+            blog_profile=blog_profile,
+            focus_keyword=brain_output.primary_keyword,
+        )
+    except ArticleValidationError as exc:
+        generation_errors = list(exc.errors or [])
+        payload = exc.payload if isinstance(exc.payload, dict) else None
+        if payload is None:
+            return _article_failed_result(
+                error=str(exc),
+                generation_errors=generation_errors,
+            )
+        article_payload = payload
+    except Exception as exc:
+        return _article_failed_result(error=str(exc))
+
+    try:
+        validator_result = validate_article_with_repair(
+            article_payload=article_payload,
+            focus_keyword=brain_output.primary_keyword,
+            blog_profile=blog_profile,
+            repair_system_prompt=repair_system_prompt,
+            artifact_dir=writer_dir / "validator",
+        )
+        article_payload = validator_result.article_payload
+    except ArticleValidationFinalError as exc:
+        validator_errors = list(exc.errors or [])
+        if not validator_errors:
+            validator_errors = [str(exc)]
+        return _article_failed_result(
+            error=str(exc),
+            generation_errors=generation_errors,
+            validator_attempts=list(getattr(exc, "attempts", []) or []),
+            validator_errors=validator_errors,
+        )
+    except ArticleValidatorError as exc:
+        return _article_failed_result(
+            error=str(exc),
+            generation_errors=generation_errors,
+            validator_errors=[str(exc)],
+        )
+    except Exception as exc:
+        return _article_failed_result(
+            error=str(exc),
+            generation_errors=generation_errors,
+            validator_errors=[str(exc)],
+        )
 
     try:
         pin_image_path = generate_pinterest_image(
@@ -1438,6 +1519,7 @@ def _run_winner_generation_sync(
     latest_by_seed = _latest_status_by_seed(entries)
     bounded_winners = winners[: max(0, opts.winners_count)]
     total_count = len(bounded_winners)
+    repair_system_prompt: str | None = None
 
     for index, winner in enumerate(bounded_winners, start=1):
         keyword = str(winner.get("keyword", "")).strip()
@@ -1496,6 +1578,9 @@ def _run_winner_generation_sync(
                 on_progress(index, total_count, result)
             continue
 
+        if repair_system_prompt is None:
+            repair_system_prompt = load_repair_system_prompt()
+
         result = _process_winner(
             run_id=run_id,
             run_dir=run_dir,
@@ -1504,6 +1589,7 @@ def _run_winner_generation_sync(
             scrape_result=scrape_result,
             trend_rank=int(winner.get("trend_rank", 0) or 0),
             pinclicks_rank=int(winner.get("pinclicks_rank", 0) or 0),
+            repair_system_prompt=repair_system_prompt,
             publish_status=opts.publish_status,
         )
         result_status = str(result.get("status", "")).strip()
@@ -1636,6 +1722,7 @@ def main() -> None:
         AnalysisError,
         ImageDesignError,
         GenerationError,
+        ArticleValidatorError,
         WordPressUploadError,
         ExporterError,
     ) as exc:

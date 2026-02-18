@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,6 +7,8 @@ from unittest.mock import Mock, patch
 
 from validator import (
     ArticleValidationFinalError,
+    ArticleValidatorError,
+    load_repair_system_prompt,
     validate_article_with_repair,
 )
 
@@ -319,6 +322,39 @@ class ArticleValidatorTests(unittest.TestCase):
             self.assertTrue((artifact_dir / "validator_rule_report.json").exists())
             self.assertTrue((artifact_dir / "validator_attempt_1.json").exists())
             self.assertTrue((artifact_dir / "validator_final.json").exists())
+
+    def test_load_repair_system_prompt_prefers_env_override(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"ARTICLE_VALIDATOR_REPAIR_PROMPT": "Env override prompt"},
+            clear=False,
+        ):
+            prompt = load_repair_system_prompt()
+        self.assertEqual(prompt, "Env override prompt")
+
+    def test_load_repair_system_prompt_falls_back_to_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            prompt_path = Path(tmp_dir) / "article_validator_repair.md"
+            prompt_path.write_text("File prompt", encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {"ARTICLE_VALIDATOR_REPAIR_PROMPT": ""},
+                clear=False,
+            ), patch("validator.REPAIR_PROMPT_FILE", prompt_path):
+                prompt = load_repair_system_prompt()
+        self.assertEqual(prompt, "File prompt")
+
+    def test_load_repair_system_prompt_raises_when_env_and_file_are_missing(self) -> None:
+        missing_path = Path(tempfile.gettempdir()) / "__missing_validator_prompt__.md"
+        if missing_path.exists():
+            missing_path.unlink()
+        with patch.dict(
+            os.environ,
+            {"ARTICLE_VALIDATOR_REPAIR_PROMPT": ""},
+            clear=False,
+        ), patch("validator.REPAIR_PROMPT_FILE", missing_path):
+            with self.assertRaises(ArticleValidatorError):
+                load_repair_system_prompt()
 
 
 if __name__ == "__main__":

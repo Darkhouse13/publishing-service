@@ -293,7 +293,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                 "pinterest_engine._process_winner",
                 side_effect=[
                     {"keyword": "alpha", "status": "completed", "title": "Alpha", "post_url": "https://a"},
-                    {"keyword": "beta", "status": "failed", "error": "boom", "failure_stage": "wp_failed"},
+                    {"keyword": "beta", "status": "failed", "error": "boom", "failure_stage": "article_failed"},
                 ],
             ) as mock_process_winner:
                 results = run_winner_generation_sync(

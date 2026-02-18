@@ -272,6 +272,9 @@ class GeneratorsSeoRetryTests(unittest.TestCase):
 
         self.assertIn("after 3 attempts", str(exc.exception))
         self.assertTrue(exc.exception.errors)
+        self.assertIsInstance(exc.exception.payload, dict)
+        self.assertIn("article_markdown", exc.exception.payload)
+        self.assertIn("content_markdown", exc.exception.payload)
 
     def test_generate_article_preserves_internal_placeholder_literal(self) -> None:
         valid_markdown = _valid_article_markdown("smart patio workflow")

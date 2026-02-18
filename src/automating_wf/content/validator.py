@@ -17,6 +17,8 @@ MAX_CONTEXT_PARAGRAPHS = 16
 MAX_CONTEXT_CHARS = 420
 ALLOWED_PATCH_OPS = {"replace_h2", "replace_paragraph"}
 H2_PATTERN = re.compile(r"^\s{0,3}##(?!#)\s*(.*?)\s*#*\s*$")
+REPAIR_PROMPT_ENV_KEY = "ARTICLE_VALIDATOR_REPAIR_PROMPT"
+REPAIR_PROMPT_FILE = Path(__file__).resolve().parents[1] / "prompts" / "article_validator_repair.md"
 
 
 class ArticleValidatorError(RuntimeError):
@@ -32,11 +34,13 @@ class ArticleValidationFinalError(ArticleValidatorError):
         *,
         errors: list[str] | None = None,
         attempts_used: int = 0,
+        attempts: list[dict[str, Any]] | None = None,
         last_payload: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.errors = list(errors or [])
         self.attempts_used = int(attempts_used)
+        self.attempts = list(attempts or [])
         self.last_payload = dict(last_payload or {})
 
 
@@ -105,6 +109,32 @@ class _ParagraphSegment:
     start_line: int
     end_line: int
     text: str
+
+
+def load_repair_system_prompt() -> str:
+    """Load validator repair system prompt from env override or bundled prompt file."""
+    load_dotenv()
+    env_prompt = str(os.getenv(REPAIR_PROMPT_ENV_KEY, "")).strip()
+    if env_prompt:
+        return env_prompt
+
+    prompt_file = REPAIR_PROMPT_FILE
+    try:
+        file_prompt = prompt_file.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        file_prompt = ""
+    except Exception as exc:
+        raise ArticleValidatorError(
+            f"Failed to read validator repair prompt file '{prompt_file}': {exc}"
+        ) from exc
+
+    if file_prompt:
+        return file_prompt
+
+    raise ArticleValidatorError(
+        "Validator repair prompt is missing. Set ARTICLE_VALIDATOR_REPAIR_PROMPT or "
+        "populate src/automating_wf/prompts/article_validator_repair.md."
+    )
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -646,5 +676,6 @@ def validate_article_with_repair(
         ),
         errors=current_report.errors,
         attempts_used=max_repair_attempts,
+        attempts=[item.to_dict() for item in attempts],
         last_payload=payload,
     )

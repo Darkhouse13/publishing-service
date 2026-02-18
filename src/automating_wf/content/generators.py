@@ -41,9 +41,15 @@ class GenerationError(RuntimeError):
 class ArticleValidationError(GenerationError):
     """Raised when article generation exhausts retries due to hard validation failures."""
 
-    def __init__(self, message: str, errors: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        errors: list[str] | None = None,
+        payload: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.errors = list(errors or [])
+        self.payload = dict(payload) if isinstance(payload, dict) else None
 
 
 def _strip_code_fences(text: str) -> str:
@@ -774,6 +780,7 @@ def generate_article(
 
     last_stage = "request"
     last_errors: list[str] = []
+    best_effort_payload: dict[str, str] | None = None
     for attempt in range(1, max_attempts + 1):
         feedback_block = ""
         if last_errors:
@@ -810,6 +817,8 @@ def generate_article(
             last_errors = [str(exc)]
             continue
 
+        best_effort_payload = dict(parsed)
+
         validation_errors = run_hard_validations(parsed=parsed, focus_keyword=resolved_focus_keyword)
         if validation_errors:
             last_stage = "validation"
@@ -826,6 +835,7 @@ def generate_article(
             f"Last errors: {error_summary}"
         ),
         errors=last_errors,
+        payload=best_effort_payload,
     )
 
 
