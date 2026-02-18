@@ -111,6 +111,16 @@ def _init_session_state(st: Any) -> None:
         st.session_state.category_fetch_error = None
     if "last_suggested_category" not in st.session_state:
         st.session_state.last_suggested_category = ""
+    if "article_failure_stage" not in st.session_state:
+        st.session_state.article_failure_stage = ""
+    if "article_generation_errors" not in st.session_state:
+        st.session_state.article_generation_errors = []
+    if "article_validator_errors" not in st.session_state:
+        st.session_state.article_validator_errors = []
+    if "article_validator_attempts" not in st.session_state:
+        st.session_state.article_validator_attempts = []
+    if "article_validator_artifact_dir" not in st.session_state:
+        st.session_state.article_validator_artifact_dir = None
 
 
 def _get_selected_index(options: list[str], selected_value: str) -> int:
@@ -159,12 +169,10 @@ def _refresh_vibes(st: Any, generate_vibe_bank: Any) -> None:
 def _render_single_article_tab() -> None:
     import streamlit as st
 
-    from automating_wf.content.generators import (
-        ArticleValidationError,
-        GenerationError,
-        generate_article,
-        generate_image,
-        generate_vibe_bank,
+    from automating_wf.content.generators import GenerationError, generate_vibe_bank
+    from automating_wf.content.single_article_flow import (
+        SingleArticleDraftError,
+        generate_single_article_draft,
     )
     from automating_wf.wordpress.uploader import (
         WordPressUploadError,
@@ -188,6 +196,11 @@ def _render_single_article_tab() -> None:
             st.session_state.vibe_options = []
             st.session_state.selected_vibe = ""
             st.session_state.vibe_source_blog = ""
+            st.session_state.article_failure_stage = ""
+            st.session_state.article_generation_errors = []
+            st.session_state.article_validator_errors = []
+            st.session_state.article_validator_attempts = []
+            st.session_state.article_validator_artifact_dir = None
 
         blog_options = list(BLOG_CONFIGS.keys())
         blog_index = _get_selected_index(blog_options, st.session_state.selected_blog)
@@ -336,19 +349,10 @@ def _render_single_article_tab() -> None:
             if hasattr(st, "status"):
                 with st.status("Generating article...", expanded=True) as status:
                     try:
-                        article_payload = generate_article(
+                        draft_result = generate_single_article_draft(
                             topic=st.session_state.topic.strip(),
                             vibe=st.session_state.selected_vibe,
                             blog_profile=resolve_blog_profile(st.session_state.selected_blog),
-                        )
-                        hero_image_path = generate_image(
-                            prompt=article_payload["hero_image_prompt"],
-                            image_kind="hero",
-                            out_dir=TMP_DIR,
-                        )
-                        detail_image_path = generate_image(
-                            prompt=article_payload["detail_image_prompt"],
-                            image_kind="detail",
                             out_dir=TMP_DIR,
                         )
                         status.update(label="Article generated!", state="complete")
@@ -357,45 +361,80 @@ def _render_single_article_tab() -> None:
                         raise
             else:
                 with st.spinner("Generating article and images..."):
-                    article_payload = generate_article(
+                    draft_result = generate_single_article_draft(
                         topic=st.session_state.topic.strip(),
                         vibe=st.session_state.selected_vibe,
                         blog_profile=resolve_blog_profile(st.session_state.selected_blog),
-                    )
-                    hero_image_path = generate_image(
-                        prompt=article_payload["hero_image_prompt"],
-                        image_kind="hero",
-                        out_dir=TMP_DIR,
-                    )
-                    detail_image_path = generate_image(
-                        prompt=article_payload["detail_image_prompt"],
-                        image_kind="detail",
                         out_dir=TMP_DIR,
                     )
 
-            st.session_state.article_payload = article_payload
-            st.session_state.hero_image_path = str(hero_image_path)
-            st.session_state.detail_image_path = str(detail_image_path)
+            st.session_state.article_payload = dict(draft_result.article_payload)
+            st.session_state.hero_image_path = str(draft_result.hero_image_path)
+            st.session_state.detail_image_path = str(draft_result.detail_image_path)
             st.session_state.publish_result = None
+            st.session_state.article_failure_stage = ""
+            st.session_state.article_generation_errors = []
+            st.session_state.article_validator_errors = []
+            st.session_state.article_validator_attempts = []
+            st.session_state.article_validator_artifact_dir = str(draft_result.validator_artifact_dir)
+            if draft_result.validator_repaired:
+                st.info(
+                    "Validator repaired the draft before image generation "
+                    f"({draft_result.validator_attempts_used} attempt(s))."
+                )
             st.success("Draft generated. Review the preview before publishing.")
-        except ArticleValidationError as exc:
+        except SingleArticleDraftError as exc:
             st.error(f"Article generation failed: {exc}")
-            for error in exc.errors:
-                st.error(error)
             st.session_state.article_payload = None
             st.session_state.hero_image_path = None
             st.session_state.detail_image_path = None
             st.session_state.publish_result = None
+            st.session_state.article_failure_stage = str(exc.failure_stage or "article_failed")
+            st.session_state.article_generation_errors = list(exc.generation_errors or [])
+            st.session_state.article_validator_errors = list(exc.validator_errors or [])
+            st.session_state.article_validator_attempts = list(exc.validator_attempts or [])
+            if exc.validator_artifact_dir is not None:
+                st.session_state.article_validator_artifact_dir = str(exc.validator_artifact_dir)
+            else:
+                st.session_state.article_validator_artifact_dir = None
         except GenerationError as exc:
             st.error(f"Generation failed: {exc}")
             st.session_state.article_payload = None
             st.session_state.hero_image_path = None
             st.session_state.detail_image_path = None
             st.session_state.publish_result = None
+            st.session_state.article_failure_stage = ""
+            st.session_state.article_generation_errors = []
+            st.session_state.article_validator_errors = []
+            st.session_state.article_validator_attempts = []
+            st.session_state.article_validator_artifact_dir = None
 
     article_payload = st.session_state.article_payload
     hero_image_path = st.session_state.hero_image_path
     detail_image_path = st.session_state.detail_image_path
+    article_failure_stage = str(st.session_state.article_failure_stage or "").strip()
+    article_generation_errors = list(st.session_state.article_generation_errors or [])
+    article_validator_errors = list(st.session_state.article_validator_errors or [])
+    article_validator_attempts = list(st.session_state.article_validator_attempts or [])
+    article_validator_artifact_dir = str(st.session_state.article_validator_artifact_dir or "").strip()
+
+    if article_failure_stage == "article_failed":
+        st.error("Latest draft failed at `article_failed` before image generation/publish.")
+        if article_generation_errors:
+            st.write("Generation errors:")
+            for error in article_generation_errors:
+                st.error(str(error))
+        if article_validator_errors:
+            st.write("Validator errors:")
+            for error in article_validator_errors:
+                st.error(str(error))
+        with st.expander("Validator Diagnostic Details"):
+            if article_validator_artifact_dir:
+                st.caption(f"Validator artifacts: `{article_validator_artifact_dir}`")
+            if article_validator_attempts:
+                st.json(article_validator_attempts)
+            else:
+                st.caption("No validator attempts recorded.")
 
     if article_payload:
         st.subheader(article_payload["title"])
