@@ -142,6 +142,7 @@ class PinterestEngineTests(unittest.TestCase):
             scrape_result = self._sample_scrape_result()
             brain_output = self._sample_brain_output()
             call_order: list[str] = []
+            pin_call_kwargs: list[dict[str, object]] = []
 
             article_payload = {
                 "title": "Backyard Fence Ideas",
@@ -160,6 +161,7 @@ class PinterestEngineTests(unittest.TestCase):
 
             def _generate_pin_image(*_args, **_kwargs):
                 call_order.append("generate_pinterest_image")
+                pin_call_kwargs.append(dict(_kwargs))
                 return run_dir / "pin.jpg"
 
             def _generate_writer_image(*_args, **kwargs):
@@ -234,6 +236,8 @@ class PinterestEngineTests(unittest.TestCase):
             call_order.index("generate_article"),
             call_order.index("generate_pinterest_image"),
         )
+        self.assertTrue(pin_call_kwargs)
+        self.assertEqual(pin_call_kwargs[0].get("blog_name"), "The Sunday Patio")
 
     def test_process_winner_marks_article_failed_when_validator_exhausts_retries(self) -> None:
         with TemporaryDirectory() as tmp_dir:

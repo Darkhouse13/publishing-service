@@ -18,6 +18,9 @@ WEIGHT_TAG = 1.0
 MIN_FREQUENCY = 3
 MAX_SUPPORTING_TERMS = 5
 MAX_ANALYSIS_ATTEMPTS = 3
+PIN_TEXT_OVERLAY_MIN_WORDS = 2
+PIN_TEXT_OVERLAY_MAX_WORDS = 6
+PIN_TEXT_OVERLAY_MAX_CHARS = 32
 
 REQUIRED_OUTPUT_KEYS = (
     "primary_keyword",
@@ -306,6 +309,9 @@ def _validate_payload(payload: dict[str, Any]) -> list[str]:
     pin_description = payload.get("pin_description", "")
     if isinstance(pin_description, str) and len(pin_description) > 500:
         errors.append("pin_description exceeds 500 characters")
+    pin_text_overlay = payload.get("pin_text_overlay", "")
+    if isinstance(pin_text_overlay, str):
+        errors.extend(_validate_pin_text_overlay(pin_text_overlay))
     return errors
 
 
@@ -318,12 +324,76 @@ def _truncate_with_ellipsis(value: str, limit: int) -> str:
     return f"{truncated}..."
 
 
+def _tokenize_overlay(value: str) -> list[str]:
+    return [token for token in re.findall(r"[A-Za-z0-9&']+", value) if token]
+
+
+def _validate_pin_text_overlay(value: str) -> list[str]:
+    errors: list[str] = []
+    normalized = " ".join(str(value).split())
+    words = normalized.split()
+    if len(words) < PIN_TEXT_OVERLAY_MIN_WORDS:
+        errors.append(
+            f"pin_text_overlay must have at least {PIN_TEXT_OVERLAY_MIN_WORDS} words"
+        )
+    if len(words) > PIN_TEXT_OVERLAY_MAX_WORDS:
+        errors.append(
+            f"pin_text_overlay exceeds {PIN_TEXT_OVERLAY_MAX_WORDS} words"
+        )
+    if len(normalized) > PIN_TEXT_OVERLAY_MAX_CHARS:
+        errors.append(
+            f"pin_text_overlay exceeds {PIN_TEXT_OVERLAY_MAX_CHARS} characters"
+        )
+    return errors
+
+
+def _coerce_pin_text_overlay(value: str, primary_keyword: str) -> str:
+    tokens = _tokenize_overlay(value)
+    fallback_tokens = _tokenize_overlay(primary_keyword)
+    if not fallback_tokens:
+        fallback_tokens = ["Easy", "Ideas"]
+    if not tokens:
+        tokens = fallback_tokens.copy()
+
+    tokens = tokens[:PIN_TEXT_OVERLAY_MAX_WORDS]
+    fallback_index = 0
+    while len(tokens) < PIN_TEXT_OVERLAY_MIN_WORDS:
+        if fallback_index < len(fallback_tokens):
+            tokens.append(fallback_tokens[fallback_index])
+            fallback_index += 1
+            continue
+        tokens.append("Ideas")
+
+    max_count = min(PIN_TEXT_OVERLAY_MAX_WORDS, len(tokens))
+    for count in range(max_count, PIN_TEXT_OVERLAY_MIN_WORDS - 1, -1):
+        candidate = " ".join(tokens[:count]).strip()
+        if len(candidate) <= PIN_TEXT_OVERLAY_MAX_CHARS:
+            return candidate
+
+    first = tokens[0][: max(1, PIN_TEXT_OVERLAY_MAX_CHARS - 2)]
+    second_budget = max(1, PIN_TEXT_OVERLAY_MAX_CHARS - len(first) - 1)
+    second = tokens[1][:second_budget]
+    candidate = f"{first} {second}".strip()
+    if len(candidate) > PIN_TEXT_OVERLAY_MAX_CHARS:
+        candidate = candidate[:PIN_TEXT_OVERLAY_MAX_CHARS].rstrip()
+    if " " not in candidate:
+        split_at = max(1, min(len(candidate) - 1, len(candidate) // 2))
+        candidate = f"{candidate[:split_at]} {candidate[split_at:]}".strip()
+    return candidate
+
+
 def _coerce_length_limits(payload: dict[str, Any]) -> dict[str, Any]:
     fixed = dict(payload)
     pin_title = str(fixed.get("pin_title", "")).strip()
     pin_description = str(fixed.get("pin_description", "")).strip()
+    primary_keyword = str(fixed.get("primary_keyword", "")).strip()
+    pin_text_overlay = str(fixed.get("pin_text_overlay", "")).strip()
     fixed["pin_title"] = _truncate_with_ellipsis(pin_title, 100)
     fixed["pin_description"] = _truncate_with_ellipsis(pin_description, 500)
+    fixed["pin_text_overlay"] = _coerce_pin_text_overlay(
+        pin_text_overlay,
+        primary_keyword,
+    )
     return fixed
 
 

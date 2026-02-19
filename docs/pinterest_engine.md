@@ -38,6 +38,9 @@ This workflow does not generate a Pinterest ZIP package.
 - `PINTEREST_CSV_PATH_TEMPLATE` default `artifacts/exports/pinterest_bulk_upload_{blog_suffix}.csv`
 - `PINTEREST_CSV_CADENCE_MINUTES` default `240`
 - `FAL_MODEL_PIN` fallback to `FAL_MODEL`
+- `PINTEREST_FONT_MAP_JSON` map of blog suffix/default to scalable `.ttf`/`.otf`/`.ttc` font paths for readable overlay text
+- `PINTEREST_PIN_TEMPLATE_MODE` default `center_strip` (`center_strip|none`)
+- `PINTEREST_PIN_TEMPLATE_FAILURE_POLICY` default `template_or_none` (`template_or_none|fail`)
 - `ARTICLE_VALIDATOR_REPAIR_PROMPT` optional inline override for the article validator repair system prompt
 - `WP_PUBLIC_POST_URL_TEMPLATE_<BLOG_SUFFIX>` default `{site_url}/{slug}/`
 
@@ -63,6 +66,59 @@ This workflow does not generate a Pinterest ZIP package.
   }
 }
 ```
+
+## Font map examples
+
+Readable Pinterest overlays require a scalable font. The image pipeline resolves fonts in this order:
+
+1. `PINTEREST_FONT_MAP_JSON` (blog suffix key first, then `default`)
+2. Pillow packaged DejaVu font (if available)
+3. OS fallback candidates
+
+If no scalable font can be resolved, image generation fails with an actionable error instead of rendering tiny text.
+
+Windows example:
+
+```json
+{
+  "default": "C:\\Windows\\Fonts\\segoeui.ttf",
+  "THE_SUNDAY_PATIO": "C:\\Windows\\Fonts\\arial.ttf"
+}
+```
+
+macOS example:
+
+```json
+{
+  "default": "/System/Library/Fonts/Supplemental/Arial.ttf"
+}
+```
+
+Linux example:
+
+```json
+{
+  "default": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+}
+```
+
+## Pinterest Image Template
+
+Default pin rendering uses a deterministic center-strip template:
+
+1. Full `1000x1500` canvas.
+2. Top and bottom image panels are cropped from one generated base image.
+3. A light center strip contains:
+4. Uppercased headline from `pin_title`.
+5. Blog-name byline from the configured blog display name.
+
+Template controls:
+
+- `PINTEREST_PIN_TEMPLATE_MODE=center_strip|none`
+- `PINTEREST_PIN_TEMPLATE_FAILURE_POLICY=template_or_none|fail`
+
+`template_or_none` exports a clean no-text full-bleed image when text template rendering fails.
+`fail` raises an image generation error instead.
 
 ## Run
 

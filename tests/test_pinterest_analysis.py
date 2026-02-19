@@ -69,10 +69,11 @@ class PinterestAnalysisTests(unittest.TestCase):
 
         long_title = "T" * 140
         long_desc = "D" * 620
+        long_overlay = "This Overlay Has Too Many Words And Is Definitely Too Long"
         payload = {
             "primary_keyword": "delta epsilon zeta",
             "image_generation_prompt": "Photorealistic patio detail",
-            "pin_text_overlay": "Simple hook",
+            "pin_text_overlay": long_overlay,
             "pin_title": long_title,
             "pin_description": long_desc,
             "cluster_label": "Outdoor Living",
@@ -99,6 +100,54 @@ class PinterestAnalysisTests(unittest.TestCase):
 
         self.assertLessEqual(len(output.pin_title), 100)
         self.assertLessEqual(len(output.pin_description), 500)
+        self.assertLessEqual(len(output.pin_text_overlay), 32)
+        overlay_words = output.pin_text_overlay.split()
+        self.assertGreaterEqual(len(overlay_words), 2)
+        self.assertLessEqual(len(overlay_words), 6)
+
+    def test_analyze_seed_keeps_overlay_that_already_meets_limits(self) -> None:
+        records = [
+            _record("delta epsilon zeta", 10),
+            _record("delta epsilon zeta", 10),
+            _record("delta epsilon zeta", 10),
+        ]
+        scrape_result = SeedScrapeResult(
+            blog_suffix="THE_SUNDAY_PATIO",
+            seed_keyword="delta epsilon zeta",
+            source_url="https://app.pinclicks.com/top-pins?query=delta+epsilon+zeta",
+            records=records,
+            scraped_at="2026-02-16T00:00:00Z",
+        )
+
+        payload = {
+            "primary_keyword": "delta epsilon zeta",
+            "image_generation_prompt": "Photorealistic patio detail with no text, no watermark",
+            "pin_text_overlay": "Simple Hook",
+            "pin_title": "Useful Title",
+            "pin_description": "Helpful description",
+            "cluster_label": "Outdoor Living",
+        }
+        mock_client = Mock()
+        mock_client.chat.completions.create.return_value = _mock_response(json.dumps(payload))
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch(
+            "pinterest_analysis._build_openai_client",
+            return_value=(mock_client, "deepseek-chat"),
+        ), patch(
+            "pinterest_analysis._load_prompt",
+            return_value="prompt",
+        ), patch.dict(
+            environ,
+            {"PINTEREST_ANALYSIS_ATTEMPTS": "1"},
+            clear=False,
+        ):
+            output = analyze_seed(
+                scrape_result=scrape_result,
+                blog_suffix="THE_SUNDAY_PATIO",
+                run_dir=Path(tmp_dir),
+            )
+
+        self.assertEqual(output.pin_text_overlay, "Simple Hook")
 
 
 if __name__ == "__main__":

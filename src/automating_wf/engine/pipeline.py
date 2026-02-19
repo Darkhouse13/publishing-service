@@ -954,6 +954,7 @@ def _process_winner(
         pin_image_path = generate_pinterest_image(
             brain_output=brain_output,
             blog_suffix=blog_suffix,
+            blog_name=blog_name,
             run_dir=pin_dir,
             max_attempts=2,
         )

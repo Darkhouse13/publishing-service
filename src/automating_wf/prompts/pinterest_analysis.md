@@ -22,5 +22,7 @@ Output schema:
 Hard constraints:
 - pin_title must be <= 100 characters.
 - pin_description must be <= 500 characters.
-- pin_text_overlay should be punchy and concise for image overlay readability.
+- pin_text_overlay must be 2-6 words and <= 32 characters.
+- pin_text_overlay should use simple, high-legibility language that is easy to read at thumbnail scale.
 - image_generation_prompt must target photorealistic Pinterest-native imagery.
+- image_generation_prompt must explicitly avoid embedded text, letters, logos, watermarks, and UI chrome.
