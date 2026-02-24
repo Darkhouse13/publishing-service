@@ -5,14 +5,14 @@ from os import environ
 from pathlib import Path
 from unittest.mock import patch
 
-from pinterest_design import (
+from automating_wf.design.pinterest import (
     ImageDesignError,
     PIN_HEIGHT,
     PIN_WIDTH,
     generate_pinterest_image,
     resolve_font_path,
 )
-from pinterest_models import BrainOutput
+from automating_wf.models.pinterest import BrainOutput
 
 
 class PinterestDesignTests(unittest.TestCase):
@@ -37,7 +37,7 @@ class PinterestDesignTests(unittest.TestCase):
                 + '"}'
             )
             with patch.dict(environ, {"PINTEREST_FONT_MAP_JSON": env_value}, clear=False), patch(
-                "pinterest_design._is_scalable_font_path",
+                "automating_wf.design.pinterest._is_scalable_font_path",
                 return_value=True,
             ):
                 resolved = resolve_font_path("THE_SUNDAY_PATIO")
@@ -47,14 +47,14 @@ class PinterestDesignTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             fallback_font = Path(tmp_dir) / "fallback.ttf"
             fallback_font.write_bytes(b"font")
-            with patch("pinterest_design._load_font_map", return_value={}), patch(
-                "pinterest_design._pillow_packaged_fallback_font_path",
+            with patch("automating_wf.design.pinterest._load_font_map", return_value={}), patch(
+                "automating_wf.design.pinterest._pillow_packaged_fallback_font_path",
                 return_value=None,
             ), patch(
-                "pinterest_design._iter_os_font_candidates",
+                "automating_wf.design.pinterest._iter_os_font_candidates",
                 return_value=[(fallback_font, "os_windows")],
             ), patch(
-                "pinterest_design._is_scalable_font_path",
+                "automating_wf.design.pinterest._is_scalable_font_path",
                 return_value=True,
             ):
                 resolved = resolve_font_path("THE_SUNDAY_PATIO")
@@ -72,7 +72,7 @@ class PinterestDesignTests(unittest.TestCase):
             output_dir = Path(tmp_dir) / "out"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            with patch("pinterest_design._build_base_image", return_value=base) as mock_build, patch.dict(
+            with patch("automating_wf.design.pinterest._build_base_image", return_value=base) as mock_build, patch.dict(
                 environ,
                 {
                     "PINTEREST_PIN_TEMPLATE_MODE": "center_strip",
@@ -116,7 +116,7 @@ class PinterestDesignTests(unittest.TestCase):
                 "This is a very long pinterest headline title that should be cropped to fit the center strip "
                 "without breaking readability or layout guarantees"
             )
-            with patch("pinterest_design._build_base_image", return_value=base), patch.dict(
+            with patch("automating_wf.design.pinterest._build_base_image", return_value=base), patch.dict(
                 environ,
                 {
                     "PINTEREST_PIN_TEMPLATE_MODE": "center_strip",
@@ -149,8 +149,8 @@ class PinterestDesignTests(unittest.TestCase):
             output_dir = Path(tmp_dir) / "out"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            with patch("pinterest_design._build_base_image", return_value=base), patch(
-                "pinterest_design._resolve_font_path_with_source",
+            with patch("automating_wf.design.pinterest._build_base_image", return_value=base), patch(
+                "automating_wf.design.pinterest._resolve_font_path_with_source",
                 return_value=(None, "missing", ["env:default:C:/missing.ttf"]),
             ), patch.dict(
                 environ,
@@ -185,8 +185,8 @@ class PinterestDesignTests(unittest.TestCase):
             output_dir = Path(tmp_dir) / "out"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            with patch("pinterest_design._build_base_image", return_value=base), patch(
-                "pinterest_design._resolve_font_path_with_source",
+            with patch("automating_wf.design.pinterest._build_base_image", return_value=base), patch(
+                "automating_wf.design.pinterest._resolve_font_path_with_source",
                 return_value=(None, "missing", ["env:default:C:/missing.ttf"]),
             ), patch.dict(
                 environ,

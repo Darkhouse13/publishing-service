@@ -74,6 +74,7 @@ DEFAULT_TEMPLATE_MODE = TEMPLATE_MODE_CENTER_STRIP
 DEFAULT_TEMPLATE_FAILURE_POLICY = TEMPLATE_FAILURE_POLICY_TEMPLATE_OR_NONE
 
 CENTER_STRIP_HEIGHT = 270
+CENTER_STRIP_BOTTOM_MARGIN = 80
 
 CENTER_STRIP_BACKGROUND = (246, 246, 246)
 CENTER_STRIP_LINE = (218, 218, 218)
@@ -380,7 +381,7 @@ def _compose_center_strip_background(fitted: Any) -> tuple[Any, dict[str, int]]:
 
     # Keep one continuous scene to avoid duplicated objects introduced by split-panel recropping.
     canvas = fitted.copy().convert("RGB")
-    strip_top = (PIN_HEIGHT - CENTER_STRIP_HEIGHT) // 2
+    strip_top = PIN_HEIGHT - CENTER_STRIP_HEIGHT - CENTER_STRIP_BOTTOM_MARGIN
     strip_bottom = strip_top + CENTER_STRIP_HEIGHT
 
     draw = ImageDraw.Draw(canvas)

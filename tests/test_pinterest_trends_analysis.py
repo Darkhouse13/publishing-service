@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pinterest_trends_analysis import analyze_trends_exports
+from automating_wf.analysis.trends import analyze_trends_exports
 
 
 class PinterestTrendsAnalysisTests(unittest.TestCase):

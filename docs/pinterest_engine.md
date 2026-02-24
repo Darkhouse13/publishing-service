@@ -157,3 +157,12 @@ Troubleshooting:
 - If you see `CSV row Pinterest board is required.`, your `PINTEREST_BOARD_MAP_JSON` is missing
   the current blog suffix (for example `THE_WEEKEND_FOLIO`) or the blog entry has a blank
   `default` board value.
+- If you stop Streamlit and see `Stopping...` followed by `RuntimeError: Event loop is closed`,
+  treat it as a benign shutdown-time warning when output artifacts already exist.
+- Stop Streamlit with a single `Ctrl+C`, then wait; avoid repeated interrupts while `Stopping...`
+  is displayed.
+- If shutdown appears stuck, terminate once from Task Manager or `taskkill /PID <streamlit_pid> /F`.
+- Classify as actionable only when this appears during active generation/publish before outputs,
+  or when expected artifacts are missing.
+- Optional: for a cleaner shutdown console experience, run Streamlit in a Python 3.12 virtual
+  environment.

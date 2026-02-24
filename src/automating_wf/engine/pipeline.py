@@ -44,7 +44,6 @@ from automating_wf.export.pinterest_csv import (
     DEFAULT_CADENCE_MINUTES,
     ExporterError,
     append_csv_row,
-    build_csv_path_for_blog,
     resolve_board_name,
     validate_board_mapping_for_blog,
 )
@@ -70,6 +69,10 @@ RUN_ROOT = Path("tmp") / "pinterest_engine"
 MANIFEST_NAME = "manifest.jsonl"
 SUMMARY_NAME = "run_summary.json"
 TRENDS_TOP_KEYWORDS_FILE = "trends_top_keywords.json"
+
+
+def _run_csv_path(run_dir: Path, blog_suffix: str) -> Path:
+    return run_dir / f"pinterest_bulk_upload_{blog_suffix.strip().lower()}.csv"
 TERMINAL_WINNER_STATUSES = {
     "csv_appended",
     "wp_published",
@@ -133,10 +136,12 @@ def _run_scraper_subprocess(payload: dict[str, Any], timeout: int = 600) -> dict
     env = dict(os.environ)
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    src_dir = str(Path(__file__).resolve().parents[3])
+    python_path = env.get("PYTHONPATH", "")
+    if src_dir not in python_path.split(os.pathsep):
+        env["PYTHONPATH"] = src_dir + (os.pathsep + python_path if python_path else "")
     result = subprocess.run(
-        # Use compatibility module entrypoint so subprocess bootstraps package path the
-        # same way as the main process in refactored layout.
-        [sys.executable, "-m", "scraper_subprocess"],
+        [sys.executable, "-m", "automating_wf.scrapers.subprocess_runner"],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -532,7 +537,7 @@ def _replay_pending_csv(
             skipped += 1
             continue
         csv_path_raw = details.get("csv_path")
-        csv_path = Path(str(csv_path_raw)) if isinstance(csv_path_raw, str) and csv_path_raw.strip() else build_csv_path_for_blog(blog_suffix)
+        csv_path = Path(str(csv_path_raw)) if isinstance(csv_path_raw, str) and csv_path_raw.strip() else _run_csv_path(run_dir, blog_suffix)
         pending_board = str(pending_row.get("Pinterest board", pending_row.get("Pinterest Board", ""))).strip()
         if not pending_board:
             supporting_terms = [
@@ -636,7 +641,7 @@ def _build_summary(run_dir: Path, *, blog_suffix: str | None = None) -> dict[str
             if candidate:
                 suffix = candidate
                 break
-    csv_path = str(build_csv_path_for_blog(suffix)) if suffix else ""
+    csv_path = str(_run_csv_path(run_dir, suffix)) if suffix else ""
     return {
         "run_dir": str(run_dir),
         "status_counts": status_counts,
@@ -753,7 +758,7 @@ def replay_pending_csv_sync(*, run_id: str, blog_suffix: str) -> dict[str, Any]:
     return {
         "run_id": run_id,
         "run_dir": str(run_dir),
-        "csv_path": str(build_csv_path_for_blog(suffix)),
+        "csv_path": str(_run_csv_path(run_dir, suffix)),
         "pending_before": len(pending_before),
         "recovered_count": len(recovered_keywords),
         "failed_count": len(failed_keywords),
@@ -1089,7 +1094,7 @@ def _process_winner(
             supporting_terms=brain_output.supporting_terms,
         ),
     )
-    csv_path = build_csv_path_for_blog(blog_suffix)
+    csv_path = _run_csv_path(run_dir, blog_suffix)
     cadence_minutes = _int_env("PINTEREST_CSV_CADENCE_MINUTES", DEFAULT_CADENCE_MINUTES)
     try:
         csv_result = append_csv_row(
@@ -1624,7 +1629,7 @@ def _run_winner_generation_sync(
         failed_pre_publish=failed_pre_publish,
         failed=failed,
         manifest_path=str(_manifest_path(run_dir)),
-        csv_path=str(build_csv_path_for_blog(suffix)),
+        csv_path=str(_run_csv_path(run_dir, suffix)),
     )
 
 

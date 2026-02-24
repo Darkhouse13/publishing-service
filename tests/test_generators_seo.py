@@ -3,7 +3,7 @@ import unittest
 from os import environ
 from unittest.mock import Mock, patch
 
-from generators import (
+from automating_wf.content.generators import (
     ArticleValidationError,
     KEYWORD_COUNT_MAX,
     KEYWORD_COUNT_MIN,
@@ -101,7 +101,7 @@ class GeneratorsSeoValidationTests(unittest.TestCase):
 
     def test_run_hard_validations_word_count_599_fails_threshold(self) -> None:
         payload = _build_article_payload(_valid_article_markdown())
-        with patch("generators._count_words", return_value=599):
+        with patch("automating_wf.content.generators._count_words", return_value=599):
             errors = run_hard_validations(payload, payload["focus_keyword"])
         self.assertTrue(
             any(f"word count must be >= {MIN_ARTICLE_WORD_COUNT}" in error for error in errors)
@@ -109,7 +109,7 @@ class GeneratorsSeoValidationTests(unittest.TestCase):
 
     def test_run_hard_validations_word_count_600_passes_threshold_gate(self) -> None:
         payload = _build_article_payload(_valid_article_markdown())
-        with patch("generators._count_words", return_value=600):
+        with patch("automating_wf.content.generators._count_words", return_value=600):
             errors = run_hard_validations(payload, payload["focus_keyword"])
         self.assertFalse(
             any(f"word count must be >= {MIN_ARTICLE_WORD_COUNT}" in error for error in errors)
@@ -226,7 +226,7 @@ class GeneratorsSeoRetryTests(unittest.TestCase):
             _response_with_content(valid_json),
         ]
 
-        with patch("generators._build_deepseek_client", return_value=(mock_client, "deepseek-chat")), patch.dict(
+        with patch("automating_wf.content.generators._build_deepseek_client", return_value=(mock_client, "deepseek-chat")), patch.dict(
             environ,
             {"DEEPSEEK_ARTICLE_ATTEMPTS": "3"},
             clear=False,
@@ -257,7 +257,7 @@ class GeneratorsSeoRetryTests(unittest.TestCase):
             _response_with_content(invalid_json),
         ]
 
-        with patch("generators._build_deepseek_client", return_value=(mock_client, "deepseek-chat")), patch.dict(
+        with patch("automating_wf.content.generators._build_deepseek_client", return_value=(mock_client, "deepseek-chat")), patch.dict(
             environ,
             {"DEEPSEEK_ARTICLE_ATTEMPTS": "3"},
             clear=False,
@@ -283,7 +283,7 @@ class GeneratorsSeoRetryTests(unittest.TestCase):
         mock_client = Mock()
         mock_client.chat.completions.create.return_value = _response_with_content(valid_json)
 
-        with patch("generators._build_deepseek_client", return_value=(mock_client, "deepseek-chat")):
+        with patch("automating_wf.content.generators._build_deepseek_client", return_value=(mock_client, "deepseek-chat")):
             generate_article(
                 topic="Smart patio planning",
                 vibe="Practical",

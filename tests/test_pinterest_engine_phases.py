@@ -5,12 +5,12 @@ import json
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from engine_config import (
+from automating_wf.engine.config import (
     EngineRunOptions,
     PINCLICKS_SKIP_REASON_SEARCH_INPUT_REJECTED,
     TrendCandidates,
 )
-from pinterest_engine import (
+from automating_wf.engine.pipeline import (
     _run_scraper_subprocess,
     collect_pinclicks_data_sync,
     collect_trends_candidates_sync,
@@ -18,8 +18,8 @@ from pinterest_engine import (
     run_engine,
     run_winner_generation_sync,
 )
-from pinterest_models import PinClicksKeywordScore, SeedScrapeResult
-from pinterest_scraper import ScraperError
+from automating_wf.models.pinterest import PinClicksKeywordScore, SeedScrapeResult
+from automating_wf.scrapers.pinclicks import ScraperError
 
 
 def _opts() -> EngineRunOptions:
@@ -44,17 +44,17 @@ class PinterestEnginePhaseTests(unittest.TestCase):
         with TemporaryDirectory() as tmp_dir:
             run_dir = Path(tmp_dir)
             with patch(
-                "pinterest_engine._resolve_run_dir",
+                "automating_wf.engine.pipeline._resolve_run_dir",
                 return_value=("20260217_120000", run_dir),
             ), patch(
-                "pinterest_engine._load_manifest_entries",
+                "automating_wf.engine.pipeline._load_manifest_entries",
                 return_value=[],
             ), patch(
-                "pinterest_engine.validate_board_mapping_for_blog",
+                "automating_wf.engine.pipeline.validate_board_mapping_for_blog",
             ), patch(
-                "pinterest_engine._replay_pending_csv",
+                "automating_wf.engine.pipeline._replay_pending_csv",
             ), patch(
-                "pinterest_engine._load_cached_top_keywords",
+                "automating_wf.engine.pipeline._load_cached_top_keywords",
                 return_value=[
                     {
                         "keyword": "patio furniture",
@@ -78,18 +78,18 @@ class PinterestEnginePhaseTests(unittest.TestCase):
         with TemporaryDirectory() as tmp_dir:
             run_dir = Path(tmp_dir)
             with patch(
-                "pinterest_engine._resolve_phase_run_dir",
+                "automating_wf.engine.pipeline._resolve_phase_run_dir",
                 return_value=run_dir,
             ), patch(
-                "pinterest_engine._load_manifest_entries",
+                "automating_wf.engine.pipeline._load_manifest_entries",
                 return_value=[],
             ), patch(
-                "pinterest_engine._append_manifest",
+                "automating_wf.engine.pipeline._append_manifest",
             ), patch(
-                "pinterest_engine._load_cached_top_keywords",
+                "automating_wf.engine.pipeline._load_cached_top_keywords",
                 return_value=[{"keyword": "patio furniture", "rank": 1}],
             ), patch(
-                "pinterest_engine.scrape_seed",
+                "automating_wf.engine.pipeline.scrape_seed",
                 return_value=SeedScrapeResult(
                     blog_suffix="THE_SUNDAY_PATIO",
                     seed_keyword="patio furniture",
@@ -99,7 +99,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     scraped_at="2026-02-17T10:00:00Z",
                 ),
             ) as mock_scrape_seed, patch(
-                "pinterest_engine.rank_pinclicks_keywords",
+                "automating_wf.engine.pipeline.rank_pinclicks_keywords",
                 return_value=[
                     PinClicksKeywordScore(
                         keyword="patio furniture",
@@ -131,18 +131,18 @@ class PinterestEnginePhaseTests(unittest.TestCase):
         with TemporaryDirectory() as tmp_dir:
             run_dir = Path(tmp_dir)
             with patch(
-                "pinterest_engine._resolve_phase_run_dir",
+                "automating_wf.engine.pipeline._resolve_phase_run_dir",
                 return_value=run_dir,
             ), patch(
-                "pinterest_engine._load_manifest_entries",
+                "automating_wf.engine.pipeline._load_manifest_entries",
                 return_value=[],
             ), patch(
-                "pinterest_engine._append_manifest",
+                "automating_wf.engine.pipeline._append_manifest",
             ), patch(
-                "pinterest_engine._load_cached_top_keywords",
+                "automating_wf.engine.pipeline._load_cached_top_keywords",
                 return_value=[{"keyword": "patio furniture", "rank": 1}],
             ), patch(
-                "pinterest_engine.scrape_seed",
+                "automating_wf.engine.pipeline.scrape_seed",
                 side_effect=ScraperError(
                     "Could not enter keyword in PinClicks search box.",
                     reason=PINCLICKS_SKIP_REASON_SEARCH_INPUT_REJECTED,
@@ -150,7 +150,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     used_headed_fallback=True,
                 ),
             ), patch(
-                "pinterest_engine.rank_pinclicks_keywords",
+                "automating_wf.engine.pipeline.rank_pinclicks_keywords",
                 return_value=[],
             ):
                 results = collect_pinclicks_data_sync(
@@ -173,31 +173,31 @@ class PinterestEnginePhaseTests(unittest.TestCase):
         with TemporaryDirectory() as tmp_dir:
             run_dir = Path(tmp_dir)
             with patch(
-                "pinterest_engine._resolve_run_dir",
+                "automating_wf.engine.pipeline._resolve_run_dir",
                 return_value=("20260217_120000", run_dir),
             ), patch(
-                "pinterest_engine._load_manifest_entries",
+                "automating_wf.engine.pipeline._load_manifest_entries",
                 return_value=[],
             ), patch(
-                "pinterest_engine.validate_board_mapping_for_blog",
+                "automating_wf.engine.pipeline.validate_board_mapping_for_blog",
             ), patch(
-                "pinterest_engine._replay_pending_csv",
+                "automating_wf.engine.pipeline._replay_pending_csv",
             ), patch(
-                "pinterest_engine._load_cached_top_keywords",
+                "automating_wf.engine.pipeline._load_cached_top_keywords",
                 return_value=[],
             ), patch(
-                "pinterest_engine._running_in_streamlit",
+                "automating_wf.engine.pipeline._running_in_streamlit",
                 return_value=True,
             ), patch(
-                "pinterest_engine._run_scraper_subprocess",
+                "automating_wf.engine.pipeline._run_scraper_subprocess",
                 return_value={"patio furniture": ["tmp/test.csv"]},
             ) as mock_subprocess, patch(
-                "pinterest_engine.scrape_trends_exports",
+                "automating_wf.engine.pipeline.scrape_trends_exports",
             ) as mock_direct_scrape, patch(
-                "pinterest_engine.analyze_trends_exports",
+                "automating_wf.engine.pipeline.analyze_trends_exports",
                 return_value=[],
             ), patch(
-                "pinterest_engine._append_manifest",
+                "automating_wf.engine.pipeline._append_manifest",
             ):
                 collect_trends_candidates_sync(opts)
 
@@ -218,26 +218,26 @@ class PinterestEnginePhaseTests(unittest.TestCase):
         with TemporaryDirectory() as tmp_dir:
             run_dir = Path(tmp_dir)
             with patch(
-                "pinterest_engine._resolve_phase_run_dir",
+                "automating_wf.engine.pipeline._resolve_phase_run_dir",
                 return_value=run_dir,
             ), patch(
-                "pinterest_engine._load_manifest_entries",
+                "automating_wf.engine.pipeline._load_manifest_entries",
                 return_value=[],
             ), patch(
-                "pinterest_engine._append_manifest",
+                "automating_wf.engine.pipeline._append_manifest",
             ), patch(
-                "pinterest_engine._load_cached_top_keywords",
+                "automating_wf.engine.pipeline._load_cached_top_keywords",
                 return_value=[{"keyword": "patio furniture", "rank": 1}],
             ), patch(
-                "pinterest_engine._running_in_streamlit",
+                "automating_wf.engine.pipeline._running_in_streamlit",
                 return_value=True,
             ), patch(
-                "pinterest_engine._run_scraper_subprocess",
+                "automating_wf.engine.pipeline._run_scraper_subprocess",
                 return_value=sample.to_dict(),
             ) as mock_subprocess, patch(
-                "pinterest_engine.scrape_seed",
+                "automating_wf.engine.pipeline.scrape_seed",
             ) as mock_direct_scrape, patch(
-                "pinterest_engine.rank_pinclicks_keywords",
+                "automating_wf.engine.pipeline.rank_pinclicks_keywords",
                 return_value=[],
             ):
                 collect_pinclicks_data_sync(
@@ -266,21 +266,21 @@ class PinterestEnginePhaseTests(unittest.TestCase):
             (run_dir / "pinclicks_exports" / "beta" / "seed_scrape_result.json").write_text("{}")
 
             with patch(
-                "pinterest_engine._resolve_phase_run_dir",
+                "automating_wf.engine.pipeline._resolve_phase_run_dir",
                 return_value=run_dir,
             ), patch(
-                "pinterest_engine._resolve_blog_name_from_suffix",
+                "automating_wf.engine.pipeline._resolve_blog_name_from_suffix",
                 return_value="The Sunday Patio",
             ), patch(
-                "pinterest_engine.validate_board_mapping_for_blog",
+                "automating_wf.engine.pipeline.validate_board_mapping_for_blog",
             ), patch(
-                "pinterest_engine._load_manifest_entries",
+                "automating_wf.engine.pipeline._load_manifest_entries",
                 return_value=[],
             ), patch(
-                "pinterest_engine._latest_status_by_seed",
+                "automating_wf.engine.pipeline._latest_status_by_seed",
                 return_value={},
             ), patch(
-                "pinterest_engine._load_seed_scrape_result",
+                "automating_wf.engine.pipeline._load_seed_scrape_result",
                 return_value=SeedScrapeResult(
                     blog_suffix="THE_SUNDAY_PATIO",
                     seed_keyword="alpha",
@@ -290,7 +290,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     scraped_at="2026-02-17T10:00:00Z",
                 ),
             ), patch(
-                "pinterest_engine._process_winner",
+                "automating_wf.engine.pipeline._process_winner",
                 side_effect=[
                     {"keyword": "alpha", "status": "completed", "title": "Alpha", "post_url": "https://a"},
                     {"keyword": "beta", "status": "failed", "error": "boom", "failure_stage": "article_failed"},
@@ -321,21 +321,21 @@ class PinterestEnginePhaseTests(unittest.TestCase):
             (run_dir / "pinclicks_exports" / "alpha" / "seed_scrape_result.json").write_text("{}")
 
             with patch(
-                "pinterest_engine._resolve_phase_run_dir",
+                "automating_wf.engine.pipeline._resolve_phase_run_dir",
                 return_value=run_dir,
             ), patch(
-                "pinterest_engine._resolve_blog_name_from_suffix",
+                "automating_wf.engine.pipeline._resolve_blog_name_from_suffix",
                 return_value="The Sunday Patio",
             ), patch(
-                "pinterest_engine.validate_board_mapping_for_blog",
+                "automating_wf.engine.pipeline.validate_board_mapping_for_blog",
             ), patch(
-                "pinterest_engine._load_manifest_entries",
+                "automating_wf.engine.pipeline._load_manifest_entries",
                 return_value=[],
             ), patch(
-                "pinterest_engine._latest_status_by_seed",
+                "automating_wf.engine.pipeline._latest_status_by_seed",
                 return_value={},
             ), patch(
-                "pinterest_engine._load_seed_scrape_result",
+                "automating_wf.engine.pipeline._load_seed_scrape_result",
                 return_value=SeedScrapeResult(
                     blog_suffix="THE_SUNDAY_PATIO",
                     seed_keyword="alpha",
@@ -345,7 +345,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     scraped_at="2026-02-17T10:00:00Z",
                 ),
             ), patch(
-                "pinterest_engine._process_winner",
+                "automating_wf.engine.pipeline._process_winner",
                 return_value={
                     "keyword": "alpha",
                     "status": "failed",
@@ -375,10 +375,10 @@ class PinterestEnginePhaseTests(unittest.TestCase):
         with TemporaryDirectory() as tmp_dir:
             run_dir = Path(tmp_dir)
             with patch(
-                "pinterest_engine.EngineRunOptions.from_env",
+                "automating_wf.engine.pipeline.EngineRunOptions.from_env",
                 return_value=opts,
             ), patch(
-                "pinterest_engine.collect_trends_candidates_sync",
+                "automating_wf.engine.pipeline.collect_trends_candidates_sync",
                 side_effect=lambda _opts_arg: (
                     call_order.append("phase1")
                     or TrendCandidates(
@@ -389,7 +389,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     )
                 ),
             ), patch(
-                "pinterest_engine.collect_pinclicks_data_sync",
+                "automating_wf.engine.pipeline.collect_pinclicks_data_sync",
                 side_effect=lambda **_kwargs: (
                     call_order.append("phase2")
                     or type(
@@ -399,10 +399,10 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     )()
                 ),
             ), patch(
-                "pinterest_engine.run_winner_generation_sync",
+                "automating_wf.engine.pipeline.run_winner_generation_sync",
                 side_effect=lambda **_kwargs: call_order.append("phase3"),
             ), patch(
-                "pinterest_engine._build_summary",
+                "automating_wf.engine.pipeline._build_summary",
                 return_value={"status_counts": {"csv_appended": 1}},
             ):
                 summary = run_engine(
@@ -469,12 +469,12 @@ class PinterestEnginePhaseTests(unittest.TestCase):
             )
 
             with patch(
-                "pinterest_engine._resolve_phase_run_dir",
+                "automating_wf.engine.pipeline._resolve_phase_run_dir",
                 return_value=run_dir,
             ), patch(
-                "pinterest_engine.validate_board_mapping_for_blog",
+                "automating_wf.engine.pipeline.validate_board_mapping_for_blog",
             ), patch(
-                "pinterest_engine.append_csv_row",
+                "automating_wf.engine.pipeline.append_csv_row",
                 side_effect=[
                     {"status": "appended", "publish_date": "2026-02-17T13:00:00", "row": {}},
                     RuntimeError("csv write failed"),
@@ -495,7 +495,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
 class ScraperSubprocessHelperTests(unittest.TestCase):
     def test_run_scraper_subprocess_raises_on_nonzero_exit(self) -> None:
         with patch(
-            "pinterest_engine.subprocess.run",
+            "automating_wf.engine.pipeline.subprocess.run",
             return_value=subprocess.CompletedProcess(
                 args=["python", "-m", "scraper_subprocess"],
                 returncode=1,
@@ -508,7 +508,7 @@ class ScraperSubprocessHelperTests(unittest.TestCase):
 
     def test_run_scraper_subprocess_raises_on_invalid_json(self) -> None:
         with patch(
-            "pinterest_engine.subprocess.run",
+            "automating_wf.engine.pipeline.subprocess.run",
             return_value=subprocess.CompletedProcess(
                 args=["python", "-m", "scraper_subprocess"],
                 returncode=0,
@@ -521,7 +521,7 @@ class ScraperSubprocessHelperTests(unittest.TestCase):
 
     def test_run_scraper_subprocess_raises_on_scraper_error_payload(self) -> None:
         with patch(
-            "pinterest_engine.subprocess.run",
+            "automating_wf.engine.pipeline.subprocess.run",
             return_value=subprocess.CompletedProcess(
                 args=["python", "-m", "scraper_subprocess"],
                 returncode=0,

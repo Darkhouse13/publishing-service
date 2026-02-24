@@ -5,8 +5,8 @@ from tempfile import TemporaryDirectory
 from os import environ
 from unittest.mock import patch
 
-from generators import ArticleValidationError
-from pinterest_engine import (
+from automating_wf.content.generators import ArticleValidationError
+from automating_wf.engine.pipeline import (
     TRENDS_TOP_KEYWORDS_FILE,
     _build_csv_keywords,
     _is_valid_trend_keyword,
@@ -15,8 +15,8 @@ from pinterest_engine import (
     _replay_pending_csv,
     build_public_permalink,
 )
-from pinterest_models import BrainOutput, SeedScrapeResult
-from validator import ArticleValidationFinalError
+from automating_wf.models.pinterest import BrainOutput, SeedScrapeResult
+from automating_wf.content.validator import ArticleValidationFinalError
 
 
 class PinterestEngineTests(unittest.TestCase):
@@ -104,20 +104,20 @@ class PinterestEngineTests(unittest.TestCase):
             brain_output = self._sample_brain_output()
 
             with patch(
-                "pinterest_engine.analyze_seed",
+                "automating_wf.engine.pipeline.analyze_seed",
                 return_value=brain_output,
             ), patch(
-                "pinterest_engine.resolve_blog_profile",
+                "automating_wf.engine.pipeline.resolve_blog_profile",
                 return_value="Patio blog profile",
             ), patch(
-                "pinterest_engine.generate_article",
+                "automating_wf.engine.pipeline.generate_article",
                 side_effect=RuntimeError("article_validation: failed"),
             ), patch(
-                "pinterest_engine.generate_pinterest_image"
+                "automating_wf.engine.pipeline.generate_pinterest_image"
             ) as mock_generate_pin_image, patch(
-                "pinterest_engine.generate_image"
+                "automating_wf.engine.pipeline.generate_image"
             ) as mock_generate_writer_image, patch(
-                "pinterest_engine._append_manifest"
+                "automating_wf.engine.pipeline._append_manifest"
             ) as mock_append_manifest:
                 _process_winner(
                     run_id="20260216_201847",
@@ -169,28 +169,28 @@ class PinterestEngineTests(unittest.TestCase):
                 return run_dir / f"{kwargs.get('image_kind', 'image')}.jpg"
 
             with patch(
-                "pinterest_engine.analyze_seed",
+                "automating_wf.engine.pipeline.analyze_seed",
                 return_value=brain_output,
             ), patch(
-                "pinterest_engine.resolve_blog_profile",
+                "automating_wf.engine.pipeline.resolve_blog_profile",
                 return_value="Patio blog profile",
             ), patch(
-                "pinterest_engine.generate_article",
+                "automating_wf.engine.pipeline.generate_article",
                 side_effect=_generate_article,
             ), patch(
-                "pinterest_engine.validate_article_with_repair",
+                "automating_wf.engine.pipeline.validate_article_with_repair",
                 return_value=type("ValidatorResultStub", (), {"article_payload": article_payload})(),
             ), patch(
-                "pinterest_engine.generate_pinterest_image",
+                "automating_wf.engine.pipeline.generate_pinterest_image",
                 side_effect=_generate_pin_image,
             ), patch(
-                "pinterest_engine.generate_image",
+                "automating_wf.engine.pipeline.generate_image",
                 side_effect=_generate_writer_image,
             ), patch(
-                "pinterest_engine._resolve_category_id_for_article",
+                "automating_wf.engine.pipeline._resolve_category_id_for_article",
                 return_value=4,
             ), patch(
-                "pinterest_engine.publish_post",
+                "automating_wf.engine.pipeline.publish_post",
                 return_value={
                     "post_id": 101,
                     "post_url": "https://thesundaypatio.com/?p=101",
@@ -202,22 +202,19 @@ class PinterestEngineTests(unittest.TestCase):
                     "publish_warnings": [],
                 },
             ), patch(
-                "pinterest_engine.upload_media",
+                "automating_wf.engine.pipeline.upload_media",
                 return_value={"id": 202, "source_url": "https://thesundaypatio.com/pin.jpg"},
             ), patch(
-                "pinterest_engine.build_public_permalink",
+                "automating_wf.engine.pipeline.build_public_permalink",
                 return_value="https://thesundaypatio.com/backyard-fence-ideas/",
             ), patch(
-                "pinterest_engine.resolve_board_name",
+                "automating_wf.engine.pipeline.resolve_board_name",
                 return_value="Patio Inspiration",
             ), patch(
-                "pinterest_engine.build_csv_path_for_blog",
-                return_value=run_dir / "pinterest_bulk_upload.csv",
-            ), patch(
-                "pinterest_engine.append_csv_row",
+                "automating_wf.engine.pipeline.append_csv_row",
                 return_value={"publish_date": "2026-02-17 00:45"},
             ), patch(
-                "pinterest_engine._append_manifest"
+                "automating_wf.engine.pipeline._append_manifest"
             ):
                 _process_winner(
                     run_id="20260216_201847",
@@ -256,16 +253,16 @@ class PinterestEngineTests(unittest.TestCase):
             }
 
             with patch(
-                "pinterest_engine.analyze_seed",
+                "automating_wf.engine.pipeline.analyze_seed",
                 return_value=brain_output,
             ), patch(
-                "pinterest_engine.resolve_blog_profile",
+                "automating_wf.engine.pipeline.resolve_blog_profile",
                 return_value="Patio blog profile",
             ), patch(
-                "pinterest_engine.generate_article",
+                "automating_wf.engine.pipeline.generate_article",
                 return_value=article_payload,
             ), patch(
-                "pinterest_engine.validate_article_with_repair",
+                "automating_wf.engine.pipeline.validate_article_with_repair",
                 side_effect=ArticleValidationFinalError(
                     "validator failed",
                     errors=["missing h2 keyword"],
@@ -273,15 +270,15 @@ class PinterestEngineTests(unittest.TestCase):
                     attempts=[{"attempt": 1}, {"attempt": 2}],
                 ),
             ), patch(
-                "pinterest_engine.generate_pinterest_image"
+                "automating_wf.engine.pipeline.generate_pinterest_image"
             ) as mock_generate_pin_image, patch(
-                "pinterest_engine.generate_image"
+                "automating_wf.engine.pipeline.generate_image"
             ) as mock_generate_writer_image, patch(
-                "pinterest_engine.publish_post"
+                "automating_wf.engine.pipeline.publish_post"
             ) as mock_publish_post, patch(
-                "pinterest_engine.upload_media"
+                "automating_wf.engine.pipeline.upload_media"
             ) as mock_upload_media, patch(
-                "pinterest_engine._append_manifest"
+                "automating_wf.engine.pipeline._append_manifest"
             ) as mock_append_manifest:
                 result = _process_winner(
                     run_id="20260216_201847",
@@ -320,32 +317,32 @@ class PinterestEngineTests(unittest.TestCase):
             }
 
             with patch(
-                "pinterest_engine.analyze_seed",
+                "automating_wf.engine.pipeline.analyze_seed",
                 return_value=brain_output,
             ), patch(
-                "pinterest_engine.resolve_blog_profile",
+                "automating_wf.engine.pipeline.resolve_blog_profile",
                 return_value="Patio blog profile",
             ), patch(
-                "pinterest_engine.generate_article",
+                "automating_wf.engine.pipeline.generate_article",
                 side_effect=ArticleValidationError(
                     "article_validation: failed",
                     errors=["missing h2 keyword"],
                     payload=fallback_payload,
                 ),
             ), patch(
-                "pinterest_engine.validate_article_with_repair",
+                "automating_wf.engine.pipeline.validate_article_with_repair",
                 return_value=type("ValidatorResultStub", (), {"article_payload": fallback_payload})(),
             ) as mock_validator, patch(
-                "pinterest_engine.generate_pinterest_image",
+                "automating_wf.engine.pipeline.generate_pinterest_image",
                 return_value=run_dir / "pin.jpg",
             ) as mock_generate_pin_image, patch(
-                "pinterest_engine.generate_image",
+                "automating_wf.engine.pipeline.generate_image",
                 side_effect=[run_dir / "hero.jpg", run_dir / "detail.jpg"],
             ), patch(
-                "pinterest_engine._resolve_category_id_for_article",
+                "automating_wf.engine.pipeline._resolve_category_id_for_article",
                 return_value=4,
             ), patch(
-                "pinterest_engine.publish_post",
+                "automating_wf.engine.pipeline.publish_post",
                 return_value={
                     "post_id": 101,
                     "post_url": "https://thesundaypatio.com/?p=101",
@@ -357,22 +354,19 @@ class PinterestEngineTests(unittest.TestCase):
                     "publish_warnings": [],
                 },
             ), patch(
-                "pinterest_engine.upload_media",
+                "automating_wf.engine.pipeline.upload_media",
                 return_value={"id": 202, "source_url": "https://thesundaypatio.com/pin.jpg"},
             ), patch(
-                "pinterest_engine.build_public_permalink",
+                "automating_wf.engine.pipeline.build_public_permalink",
                 return_value="https://thesundaypatio.com/backyard-fence-ideas/",
             ), patch(
-                "pinterest_engine.resolve_board_name",
+                "automating_wf.engine.pipeline.resolve_board_name",
                 return_value="Patio Inspiration",
             ), patch(
-                "pinterest_engine.build_csv_path_for_blog",
-                return_value=run_dir / "pinterest_bulk_upload.csv",
-            ), patch(
-                "pinterest_engine.append_csv_row",
+                "automating_wf.engine.pipeline.append_csv_row",
                 return_value={"publish_date": "2026-02-17 00:45"},
             ), patch(
-                "pinterest_engine._append_manifest"
+                "automating_wf.engine.pipeline._append_manifest"
             ) as mock_append_manifest:
                 result = _process_winner(
                     run_id="20260216_201847",
@@ -427,9 +421,9 @@ class PinterestEngineTests(unittest.TestCase):
             }
 
             with patch(
-                "pinterest_engine.append_csv_row",
+                "automating_wf.engine.pipeline.append_csv_row",
                 return_value={"status": "appended", "publish_date": "2026-02-17T00:45:00", "row": {}},
-            ) as mock_append_csv_row, patch("pinterest_engine._append_manifest"):
+            ) as mock_append_csv_row, patch("automating_wf.engine.pipeline._append_manifest"):
                 _replay_pending_csv(
                     run_id="20260216_201847",
                     run_dir=run_dir,
@@ -470,9 +464,9 @@ class PinterestEngineTests(unittest.TestCase):
             }
 
             with patch(
-                "pinterest_engine.append_csv_row",
+                "automating_wf.engine.pipeline.append_csv_row",
                 return_value={"status": "appended", "publish_date": "2026-02-17T08:00:00", "row": {}},
-            ) as mock_append_csv_row, patch("pinterest_engine._append_manifest"):
+            ) as mock_append_csv_row, patch("automating_wf.engine.pipeline._append_manifest"):
                 _replay_pending_csv(
                     run_id="20260216_201847",
                     run_dir=run_dir,
@@ -511,12 +505,12 @@ class PinterestEngineTests(unittest.TestCase):
             }
 
             with patch(
-                "pinterest_engine.resolve_board_name",
+                "automating_wf.engine.pipeline.resolve_board_name",
                 return_value="Weekend Lifestyle Ideas",
             ), patch(
-                "pinterest_engine.append_csv_row",
+                "automating_wf.engine.pipeline.append_csv_row",
                 return_value={"status": "appended", "publish_date": "2026-02-17T08:00:00", "row": {}},
-            ) as mock_append_csv_row, patch("pinterest_engine._append_manifest"):
+            ) as mock_append_csv_row, patch("automating_wf.engine.pipeline._append_manifest"):
                 _replay_pending_csv(
                     run_id="20260216_201847",
                     run_dir=run_dir,

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from bulk_ui import STAGE_GENERATION, _detect_resume_stage
+from automating_wf.ui.bulk_pipeline import STAGE_GENERATION, _detect_resume_stage
 
 
 class BulkPipelineResumeTests(unittest.TestCase):

@@ -1,6 +1,6 @@
 import unittest
 
-from app import suggest_primary_category
+from automating_wf.config.blogs import suggest_primary_category
 
 
 class CategoryAssignmentTests(unittest.TestCase):

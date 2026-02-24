@@ -1,6 +1,6 @@
 import unittest
 
-from generators import GenerationError, parse_article_response, parse_vibe_response
+from automating_wf.content.generators import GenerationError, parse_article_response, parse_vibe_response
 
 
 class GeneratorsParserTests(unittest.TestCase):

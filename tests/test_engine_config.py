@@ -3,7 +3,7 @@ import unittest
 from os import environ
 from unittest.mock import patch
 
-from engine_config import EngineRunOptions
+from automating_wf.engine.config import EngineRunOptions
 
 
 class EngineConfigTests(unittest.TestCase):

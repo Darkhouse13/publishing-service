@@ -4,7 +4,7 @@ from os import environ
 from pathlib import Path
 from unittest.mock import patch
 
-from pinterest_trends_scraper import (
+from automating_wf.scrapers.trends import (
     EXPORT_BUTTON_SELECTORS,
     INCLUDE_KEYWORD_INPUT_SELECTORS,
     INCLUDE_KEYWORD_TRIGGER_SELECTORS,
@@ -54,16 +54,16 @@ class PinterestTrendsScraperTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(
             environ, {"PINTEREST_TRENDS_FORCE_INCLUDE_KEYWORD": "1"}, clear=False
-        ), patch("pinterest_trends_scraper._sleep_random"), patch(
-            "pinterest_trends_scraper._dismiss_popups"
+        ), patch("automating_wf.scrapers.trends._sleep_random"), patch(
+            "automating_wf.scrapers.trends._dismiss_popups"
         ), patch(
-            "pinterest_trends_scraper._apply_include_keyword_filter",
+            "automating_wf.scrapers.trends._apply_include_keyword_filter",
             side_effect=lambda *_args, **_kwargs: call_order.append("include") or False,
         ), patch(
-            "pinterest_trends_scraper._fallback_global_search",
+            "automating_wf.scrapers.trends._fallback_global_search",
             side_effect=lambda *_args, **_kwargs: call_order.append("fallback") or True,
         ), patch(
-            "pinterest_trends_scraper._save_keyword_debug_artifacts"
+            "automating_wf.scrapers.trends._save_keyword_debug_artifacts"
         ):
             with self.assertRaises(TrendsScraperError):
                 _search_keyword(
@@ -80,12 +80,12 @@ class PinterestTrendsScraperTests(unittest.TestCase):
         page = _DummyPage()
         with patch.dict(
             environ, {"PINTEREST_TRENDS_FORCE_INCLUDE_KEYWORD": "1"}, clear=False
-        ), patch("pinterest_trends_scraper._sleep_random"), patch(
-            "pinterest_trends_scraper._dismiss_popups"
+        ), patch("automating_wf.scrapers.trends._sleep_random"), patch(
+            "automating_wf.scrapers.trends._dismiss_popups"
         ), patch(
-            "pinterest_trends_scraper._apply_include_keyword_filter", return_value=True
+            "automating_wf.scrapers.trends._apply_include_keyword_filter", return_value=True
         ), patch(
-            "pinterest_trends_scraper._fallback_global_search"
+            "automating_wf.scrapers.trends._fallback_global_search"
         ) as fallback_mock:
             _search_keyword(
                 page=page,
@@ -98,12 +98,12 @@ class PinterestTrendsScraperTests(unittest.TestCase):
         page = _DummyPage()
         with patch.dict(
             environ, {"PINTEREST_TRENDS_FORCE_INCLUDE_KEYWORD": "0"}, clear=False
-        ), patch("pinterest_trends_scraper._sleep_random"), patch(
-            "pinterest_trends_scraper._dismiss_popups"
+        ), patch("automating_wf.scrapers.trends._sleep_random"), patch(
+            "automating_wf.scrapers.trends._dismiss_popups"
         ), patch(
-            "pinterest_trends_scraper._apply_include_keyword_filter", return_value=False
+            "automating_wf.scrapers.trends._apply_include_keyword_filter", return_value=False
         ) as include_mock, patch(
-            "pinterest_trends_scraper._fallback_global_search", return_value=True
+            "automating_wf.scrapers.trends._fallback_global_search", return_value=True
         ):
             _search_keyword(
                 page=page,
@@ -116,14 +116,14 @@ class PinterestTrendsScraperTests(unittest.TestCase):
         page = _DummyPage()
         with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(
             environ, {"PINTEREST_TRENDS_FORCE_INCLUDE_KEYWORD": "1"}, clear=False
-        ), patch("pinterest_trends_scraper._sleep_random"), patch(
-            "pinterest_trends_scraper._dismiss_popups"
+        ), patch("automating_wf.scrapers.trends._sleep_random"), patch(
+            "automating_wf.scrapers.trends._dismiss_popups"
         ), patch(
-            "pinterest_trends_scraper._apply_include_keyword_filter", return_value=False
+            "automating_wf.scrapers.trends._apply_include_keyword_filter", return_value=False
         ), patch(
-            "pinterest_trends_scraper._fallback_global_search", return_value=False
+            "automating_wf.scrapers.trends._fallback_global_search", return_value=False
         ), patch(
-            "pinterest_trends_scraper._save_keyword_debug_artifacts"
+            "automating_wf.scrapers.trends._save_keyword_debug_artifacts"
         ) as debug_mock:
             with self.assertRaises(TrendsScraperError):
                 _search_keyword(
@@ -136,12 +136,12 @@ class PinterestTrendsScraperTests(unittest.TestCase):
 
     def test_apply_include_keyword_filter_uses_no_escape_after_panel_open(self) -> None:
         page = _DummyPage()
-        with patch("pinterest_trends_scraper._open_include_keyword_panel", return_value=True), patch(
-            "pinterest_trends_scraper._fill_include_keyword_input", return_value=True
+        with patch("automating_wf.scrapers.trends._open_include_keyword_panel", return_value=True), patch(
+            "automating_wf.scrapers.trends._fill_include_keyword_input", return_value=True
         ), patch(
-            "pinterest_trends_scraper._verify_keyword_filter_applied", return_value=True
+            "automating_wf.scrapers.trends._verify_keyword_filter_applied", return_value=True
         ), patch(
-            "pinterest_trends_scraper._dismiss_popups"
+            "automating_wf.scrapers.trends._dismiss_popups"
         ) as dismiss_mock:
             result = _apply_include_keyword_filter(page, "patio furniture")
 

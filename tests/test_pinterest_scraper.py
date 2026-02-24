@@ -2,7 +2,7 @@ import unittest
 from os import environ
 from unittest.mock import patch
 
-from pinterest_scraper import (
+from automating_wf.scrapers.pinclicks import (
     PINCLICKS_SKIP_REASON_EXPORT_DOWNLOAD_FAILED,
     PINCLICKS_SKIP_REASON_SEARCH_INPUT_REJECTED,
     ScraperError,
@@ -84,20 +84,20 @@ class PinterestScraperTests(unittest.TestCase):
 
     def test_search_keyword_uses_direct_top_pins_fallback(self) -> None:
         with patch(
-            "pinterest_scraper._attempt_keyword_targeting",
+            "automating_wf.scrapers.pinclicks._attempt_keyword_targeting",
             return_value=PINCLICKS_SKIP_REASON_SEARCH_INPUT_REJECTED,
         ), patch(
-            "pinterest_scraper._navigate_direct_top_pins",
+            "automating_wf.scrapers.pinclicks._navigate_direct_top_pins",
             return_value=True,
         ):
             _search_keyword_on_pins_page(page=object(), seed_keyword="desk setup")
 
     def test_search_keyword_raises_when_all_fallbacks_fail(self) -> None:
         with patch(
-            "pinterest_scraper._attempt_keyword_targeting",
+            "automating_wf.scrapers.pinclicks._attempt_keyword_targeting",
             return_value=PINCLICKS_SKIP_REASON_SEARCH_INPUT_REJECTED,
         ), patch(
-            "pinterest_scraper._navigate_direct_top_pins",
+            "automating_wf.scrapers.pinclicks._navigate_direct_top_pins",
             return_value=False,
         ):
             with self.assertRaises(ScraperError):

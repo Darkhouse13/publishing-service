@@ -5,7 +5,7 @@ from os import environ
 from pathlib import Path
 from unittest.mock import patch
 
-from pinterest_exporter import (
+from automating_wf.export.pinterest_csv import (
     CSV_HEADERS,
     ExporterError,
     append_csv_row,
@@ -13,7 +13,7 @@ from pinterest_exporter import (
     round_up_to_next_window,
     validate_board_mapping_for_blog,
 )
-from pinterest_models import CsvRow
+from automating_wf.models.pinterest import CsvRow
 
 
 class PinterestExporterTests(unittest.TestCase):

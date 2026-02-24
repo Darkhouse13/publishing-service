@@ -6,7 +6,7 @@ from os import environ
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import uploader
+from automating_wf.wordpress import uploader
 
 
 class UploaderFlowTests(unittest.TestCase):
@@ -105,22 +105,22 @@ class UploaderFlowTests(unittest.TestCase):
             mock_post_response.text = '{"id":321}'
 
             with patch(
-                "uploader._get_wp_config",
+                "automating_wf.wordpress.uploader._get_wp_config",
                 return_value=("https://example.com", "wp_user", "wp_key"),
             ), patch(
-                "uploader.upload_media",
+                "automating_wf.wordpress.uploader.upload_media",
                 side_effect=[
                     {"id": 101, "source_url": "https://example.com/uploads/hero.jpg"},
                     {"id": 202, "source_url": "https://example.com/uploads/detail.jpg"},
                 ],
             ) as mock_upload_media, patch(
-                "uploader.inject_cross_blog_backlinks",
+                "automating_wf.wordpress.uploader.inject_cross_blog_backlinks",
                 return_value=("Paragraph one.\n\nParagraph two.", []),
             ), patch(
-                "uploader.ensure_required_markdown_links",
+                "automating_wf.wordpress.uploader.ensure_required_markdown_links",
                 return_value=("Paragraph one.\n\nParagraph two.", []),
             ), patch(
-                "uploader.requests.post", return_value=mock_post_response
+                "automating_wf.wordpress.uploader.requests.post", return_value=mock_post_response
             ) as mock_requests_post:
                 result = uploader.publish_post(
                     title="My Draft",
@@ -199,21 +199,21 @@ class UploaderFlowTests(unittest.TestCase):
             mock_post_response.text = '{"id":444}'
 
             with patch(
-                "uploader._get_wp_config",
+                "automating_wf.wordpress.uploader._get_wp_config",
                 return_value=("https://example.com", "wp_user", "wp_key"),
             ), patch(
-                "uploader.upload_media",
+                "automating_wf.wordpress.uploader.upload_media",
                 side_effect=[
                     {"id": 101, "source_url": "https://example.com/uploads/hero.jpg"},
                     {"id": 202, "source_url": "https://example.com/uploads/detail.jpg"},
                 ],
             ), patch(
-                "uploader.inject_cross_blog_backlinks",
+                "automating_wf.wordpress.uploader.inject_cross_blog_backlinks",
                 return_value=("Paragraph one.", []),
             ), patch(
-                "uploader.ensure_required_markdown_links",
+                "automating_wf.wordpress.uploader.ensure_required_markdown_links",
                 return_value=("Paragraph one.", []),
-            ), patch("uploader.requests.post", return_value=mock_post_response) as mock_requests_post:
+            ), patch("automating_wf.wordpress.uploader.requests.post", return_value=mock_post_response) as mock_requests_post:
                 uploader.publish_post(
                     title="My Draft",
                     content_markdown="# My Draft\n\nParagraph one.",
@@ -249,21 +249,21 @@ class UploaderFlowTests(unittest.TestCase):
             mock_post_response.text = '{"id":555}'
 
             with patch(
-                "uploader._get_wp_config",
+                "automating_wf.wordpress.uploader._get_wp_config",
                 return_value=("https://example.com", "wp_user", "wp_key"),
             ), patch(
-                "uploader.upload_media",
+                "automating_wf.wordpress.uploader.upload_media",
                 side_effect=[
                     {"id": 101, "source_url": "https://example.com/uploads/hero.jpg"},
                     {"id": 202, "source_url": "https://example.com/uploads/detail.jpg"},
                 ],
             ), patch(
-                "uploader.inject_cross_blog_backlinks",
+                "automating_wf.wordpress.uploader.inject_cross_blog_backlinks",
                 return_value=("Paragraph one.", []),
             ), patch(
-                "uploader.ensure_required_markdown_links",
+                "automating_wf.wordpress.uploader.ensure_required_markdown_links",
                 return_value=("Paragraph one.", []),
-            ), patch("uploader.requests.post", return_value=mock_post_response):
+            ), patch("automating_wf.wordpress.uploader.requests.post", return_value=mock_post_response):
                 result = uploader.publish_post(
                     title="My Draft",
                     content_markdown="Paragraph one.",
@@ -296,11 +296,11 @@ class UploaderFlowTests(unittest.TestCase):
                 ]
             }
         )
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch(
-            "uploader.list_categories",
+            "automating_wf.wordpress.uploader.list_categories",
             return_value=[{"id": 7, "name": "Outdoor Living", "slug": "outdoor-living"}],
         ), patch.dict(environ, {uploader.SEO_EXTERNAL_SOURCES_ENV: sources_json}, clear=True):
             updated, warnings = uploader.ensure_required_markdown_links(
@@ -324,8 +324,8 @@ class UploaderFlowTests(unittest.TestCase):
             "Read [more here](https://yoursundaypatio.com/category/outdoor-living/) and "
             "see [this authority source](https://www.osha.gov/ergonomics)."
         )
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ):
             updated, warnings = uploader.ensure_required_markdown_links(
@@ -338,11 +338,11 @@ class UploaderFlowTests(unittest.TestCase):
         self.assertEqual(warnings, [])
 
     def test_ensure_required_markdown_links_missing_external_sources_emits_warning(self) -> None:
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch(
-            "uploader.list_categories",
+            "automating_wf.wordpress.uploader.list_categories",
             return_value=[{"id": 7, "name": "Outdoor Living", "slug": "outdoor-living"}],
         ), patch.dict(environ, {}, clear=True):
             updated, warnings = uploader.ensure_required_markdown_links(
@@ -361,11 +361,11 @@ class UploaderFlowTests(unittest.TestCase):
         sources_json = json.dumps(
             {"default": [{"anchor": "official guidance", "url": "https://www.consumerreports.org/"}]}
         )
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch(
-            "uploader.list_categories",
+            "automating_wf.wordpress.uploader.list_categories",
             return_value=[{"id": 7, "name": "Outdoor Living", "slug": "outdoor-living"}],
         ), patch.dict(environ, {uploader.SEO_EXTERNAL_SOURCES_ENV: sources_json}, clear=True):
             updated, warnings = uploader.ensure_required_markdown_links(
@@ -378,11 +378,11 @@ class UploaderFlowTests(unittest.TestCase):
         self.assertTrue(any("homepage as internal link fallback" in warning for warning in warnings))
 
     def test_ensure_required_markdown_links_invalid_external_sources_json_warns(self) -> None:
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch(
-            "uploader.list_categories",
+            "automating_wf.wordpress.uploader.list_categories",
             return_value=[{"id": 7, "name": "Outdoor Living", "slug": "outdoor-living"}],
         ), patch.dict(environ, {uploader.SEO_EXTERNAL_SOURCES_ENV: "not-json"}, clear=True):
             _, warnings = uploader.ensure_required_markdown_links(
@@ -397,8 +397,8 @@ class UploaderFlowTests(unittest.TestCase):
             {"patio furniture": "https://yourmidnightdesk.com/patio-furniture-workspace"}
         )
         markdown = "Patio furniture ideas are practical. patio furniture styling also matters."
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch.dict(environ, {uploader.CROSS_BLOG_LINK_MAP_ENV: mapping_json}, clear=True):
             updated, warnings = uploader.inject_cross_blog_backlinks(
@@ -418,8 +418,8 @@ class UploaderFlowTests(unittest.TestCase):
             }
         )
         markdown = "A plain paragraph without configured trigger phrases."
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch.dict(environ, {uploader.CROSS_BLOG_LINK_MAP_ENV: mapping_json}, clear=True):
             updated, warnings = uploader.inject_cross_blog_backlinks(
@@ -438,8 +438,8 @@ class UploaderFlowTests(unittest.TestCase):
             {"patio furniture": "https://theweekendfolio.com/patio-design"}
         )
         markdown = "Already linked: [sister post](https://theweekendfolio.com/existing-post)."
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch.dict(environ, {uploader.CROSS_BLOG_LINK_MAP_ENV: mapping_json}, clear=True):
             updated, warnings = uploader.inject_cross_blog_backlinks(
@@ -456,8 +456,8 @@ class UploaderFlowTests(unittest.TestCase):
             {"patio furniture": "https://yoursundaypatio.com/patio-furniture-layout-ideas"}
         )
         markdown = "A plain paragraph without links."
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch.dict(environ, {uploader.CROSS_BLOG_LINK_MAP_ENV: mapping_json}, clear=True):
             updated, warnings = uploader.inject_cross_blog_backlinks(
@@ -483,8 +483,8 @@ class UploaderFlowTests(unittest.TestCase):
             "Already linked [patio furniture](https://example.com/existing).\n\n"
             "A plain paragraph about patio furniture trends."
         )
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch.dict(environ, {uploader.CROSS_BLOG_LINK_MAP_ENV: mapping_json}, clear=True):
             updated, _ = uploader.inject_cross_blog_backlinks(
@@ -514,8 +514,8 @@ class UploaderFlowTests(unittest.TestCase):
             "Phrase four appears here.\n\n"
             "Same domain phrase appears here."
         )
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch.dict(environ, {uploader.CROSS_BLOG_LINK_MAP_ENV: mapping_json}, clear=True):
             updated, warnings = uploader.inject_cross_blog_backlinks(
@@ -529,8 +529,8 @@ class UploaderFlowTests(unittest.TestCase):
         self.assertTrue(any("current blog domain" in warning for warning in warnings))
 
     def test_inject_cross_blog_backlinks_missing_map_emits_warning(self) -> None:
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch.dict(environ, {}, clear=True):
             updated, warnings = uploader.inject_cross_blog_backlinks(
@@ -555,8 +555,8 @@ class UploaderFlowTests(unittest.TestCase):
             "Paragraph one stays plain and has no trigger phrase.\n\n"
             "This split paragraph still includes privacy screen outdoor for backlink detection."
         )
-        with patch("uploader.load_dotenv"), patch(
-            "uploader._get_wp_config",
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch(
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://yoursundaypatio.com", "user", "key"),
         ), patch.dict(environ, {uploader.CROSS_BLOG_LINK_MAP_ENV: mapping_json}, clear=True):
             updated, warnings = uploader.inject_cross_blog_backlinks(
@@ -572,12 +572,12 @@ class UploaderFlowTests(unittest.TestCase):
 
     def test_ensure_category_uses_existing_case_insensitive_match(self) -> None:
         with patch(
-            "uploader.list_categories",
+            "automating_wf.wordpress.uploader.list_categories",
             return_value=[
                 {"id": 2, "name": "Outdoor Living", "slug": "outdoor-living"},
                 {"id": 3, "name": "Curb Appeal", "slug": "curb-appeal"},
             ],
-        ), patch("uploader.requests.post") as mock_post:
+        ), patch("automating_wf.wordpress.uploader.requests.post") as mock_post:
             category_id = uploader.ensure_category(
                 "outdoor living",
                 target_suffix="THE_SUNDAY_PATIO",
@@ -592,13 +592,13 @@ class UploaderFlowTests(unittest.TestCase):
         mock_response.text = '{"id":99}'
 
         with patch(
-            "uploader.list_categories",
+            "automating_wf.wordpress.uploader.list_categories",
             return_value=[{"id": 2, "name": "Outdoor Living", "slug": "outdoor-living"}],
         ), patch(
-            "uploader._get_wp_config",
+            "automating_wf.wordpress.uploader._get_wp_config",
             return_value=("https://example.com", "wp_user", "wp_key"),
         ), patch(
-            "uploader.requests.post", return_value=mock_response
+            "automating_wf.wordpress.uploader.requests.post", return_value=mock_response
         ) as mock_post:
             category_id = uploader.ensure_category(
                 "Seasonal Care",
@@ -611,7 +611,7 @@ class UploaderFlowTests(unittest.TestCase):
         self.assertEqual(request_kwargs["json"], {"name": "Seasonal Care"})
 
     def test_resolve_category_id_prefers_typed_new_name(self) -> None:
-        with patch("uploader.ensure_category", return_value=44) as mock_ensure:
+        with patch("automating_wf.wordpress.uploader.ensure_category", return_value=44) as mock_ensure:
             category_id = uploader.resolve_category_id(
                 selected_name="Outdoor Living",
                 typed_new_name="Seasonal Care",
@@ -624,7 +624,7 @@ class UploaderFlowTests(unittest.TestCase):
         )
 
     def test_get_wp_config_requires_scoped_variables(self) -> None:
-        with patch("uploader.load_dotenv"), patch.dict(environ, {}, clear=True):
+        with patch("automating_wf.wordpress.uploader.load_dotenv"), patch.dict(environ, {}, clear=True):
             with self.assertRaises(uploader.WordPressUploadError) as exc:
                 uploader._get_wp_config("THE_WEEKEND_FOLIO")
         self.assertIn("WP_URL_THE_WEEKEND_FOLIO", str(exc.exception))

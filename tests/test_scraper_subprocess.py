@@ -3,7 +3,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-import scraper_subprocess
+from automating_wf.scrapers import subprocess_runner as scraper_subprocess
 
 
 class ScraperSubprocessEmitTests(unittest.TestCase):

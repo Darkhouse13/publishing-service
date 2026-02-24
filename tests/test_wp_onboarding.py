@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from wp_onboarding import OnboardingConfig, run_onboarding
+from automating_wf.wordpress.onboarding import OnboardingConfig, run_onboarding
 
 
 def _response(payload: object, status_code: int = 200) -> Mock:
@@ -71,7 +71,7 @@ class WordPressOnboardingTests(unittest.TestCase):
                 return _response([])
             raise AssertionError(f"Unexpected request: {method} {url} {params}")
 
-        with patch("wp_onboarding.requests.request", side_effect=fake_request):
+        with patch("automating_wf.wordpress.onboarding.requests.request", side_effect=fake_request):
             report = run_onboarding(self._config(dry_run=True))
 
         post_calls = [call for call in calls if call["url"].endswith("/posts")]
@@ -114,7 +114,7 @@ class WordPressOnboardingTests(unittest.TestCase):
                 return _response([{"id": 10 if slug == "about" else 11, "slug": slug}])
             raise AssertionError(f"Unexpected request: {method} {url} {params}")
 
-        with patch("wp_onboarding.requests.request", side_effect=fake_request):
+        with patch("automating_wf.wordpress.onboarding.requests.request", side_effect=fake_request):
             report = run_onboarding(self._config(dry_run=False))
 
         self.assertFalse(
@@ -154,7 +154,7 @@ class WordPressOnboardingTests(unittest.TestCase):
                 return _response([{"id": 10 if slug == "about" else 11, "slug": slug}])
             raise AssertionError(f"Unexpected request: {method} {url} {params}")
 
-        with patch("wp_onboarding.requests.request", side_effect=fake_request):
+        with patch("automating_wf.wordpress.onboarding.requests.request", side_effect=fake_request):
             run_onboarding(self._config(dry_run=False))
 
         self.assertTrue(
@@ -203,7 +203,7 @@ class WordPressOnboardingTests(unittest.TestCase):
                 return _response({"id": 20, "slug": json.get("slug") if isinstance(json, dict) else ""})
             raise AssertionError(f"Unexpected request: {method} {url} {params}")
 
-        with patch("wp_onboarding.requests.request", side_effect=fake_request):
+        with patch("automating_wf.wordpress.onboarding.requests.request", side_effect=fake_request):
             run_onboarding(self._config(dry_run=False))
 
         created_slugs = [
@@ -244,7 +244,7 @@ class WordPressOnboardingTests(unittest.TestCase):
                 return _response([])
             raise AssertionError(f"Unexpected request: {method} {url} {params}")
 
-        with patch("wp_onboarding.requests.request", side_effect=fake_request):
+        with patch("automating_wf.wordpress.onboarding.requests.request", side_effect=fake_request):
             report = run_onboarding(self._config(dry_run=True))
 
         self.assertTrue(all(call["method"] == "GET" for call in calls))
@@ -323,7 +323,7 @@ class WordPressOnboardingTests(unittest.TestCase):
 
             raise AssertionError(f"Unexpected request: {method} {url} {params}")
 
-        with patch("wp_onboarding.requests.request", side_effect=fake_request):
+        with patch("automating_wf.wordpress.onboarding.requests.request", side_effect=fake_request):
             run_onboarding(self._config(dry_run=False))
             run_onboarding(self._config(dry_run=False))
 

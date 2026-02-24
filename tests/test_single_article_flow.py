@@ -3,12 +3,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from generators import ArticleValidationError
-from single_article_flow import (
+from automating_wf.content.generators import ArticleValidationError
+from automating_wf.content.single_article_flow import (
     SingleArticleDraftError,
     generate_single_article_draft,
 )
-from validator import ArticleValidationFinalError, ArticleValidatorError
+from automating_wf.content.validator import ArticleValidationFinalError, ArticleValidatorError
 
 
 def _payload() -> dict[str, str]:
@@ -47,13 +47,13 @@ class SingleArticleFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             with patch(
-                "single_article_flow.generate_article",
+                "automating_wf.content.single_article_flow.generate_article",
                 return_value=article_payload,
             ), patch(
-                "single_article_flow.validate_article_with_repair",
+                "automating_wf.content.single_article_flow.validate_article_with_repair",
                 return_value=_validator_result(article_payload, repaired=False, attempts_used=0),
             ) as mock_validate, patch(
-                "single_article_flow.generate_image",
+                "automating_wf.content.single_article_flow.generate_image",
                 side_effect=[tmp_path / "hero.png", tmp_path / "detail.png"],
             ) as mock_generate_image:
                 result = generate_single_article_draft(
@@ -80,17 +80,17 @@ class SingleArticleFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             with patch(
-                "single_article_flow.generate_article",
+                "automating_wf.content.single_article_flow.generate_article",
                 side_effect=ArticleValidationError(
                     "article_validation failed",
                     errors=["keyword count low"],
                     payload=article_payload,
                 ),
             ), patch(
-                "single_article_flow.validate_article_with_repair",
+                "automating_wf.content.single_article_flow.validate_article_with_repair",
                 return_value=_validator_result(article_payload, repaired=True, attempts_used=1),
             ) as mock_validate, patch(
-                "single_article_flow.generate_image",
+                "automating_wf.content.single_article_flow.generate_image",
                 side_effect=[tmp_path / "hero.png", tmp_path / "detail.png"],
             ):
                 result = generate_single_article_draft(
@@ -109,14 +109,14 @@ class SingleArticleFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             with patch(
-                "single_article_flow.generate_article",
+                "automating_wf.content.single_article_flow.generate_article",
                 side_effect=ArticleValidationError(
                     "article_validation failed",
                     errors=["missing h2 keyword"],
                     payload=None,
                 ),
-            ), patch("single_article_flow.validate_article_with_repair") as mock_validate, patch(
-                "single_article_flow.generate_image"
+            ), patch("automating_wf.content.single_article_flow.validate_article_with_repair") as mock_validate, patch(
+                "automating_wf.content.single_article_flow.generate_image"
             ) as mock_generate_image:
                 with self.assertRaises(SingleArticleDraftError) as exc:
                     generate_single_article_draft(
@@ -137,10 +137,10 @@ class SingleArticleFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             with patch(
-                "single_article_flow.generate_article",
+                "automating_wf.content.single_article_flow.generate_article",
                 return_value=article_payload,
             ), patch(
-                "single_article_flow.validate_article_with_repair",
+                "automating_wf.content.single_article_flow.validate_article_with_repair",
                 side_effect=ArticleValidationFinalError(
                     "validator failed",
                     errors=["density invalid"],
@@ -148,7 +148,7 @@ class SingleArticleFlowTests(unittest.TestCase):
                     attempts=[{"attempt": 1}, {"attempt": 2}],
                     last_payload=article_payload,
                 ),
-            ), patch("single_article_flow.generate_image") as mock_generate_image:
+            ), patch("automating_wf.content.single_article_flow.generate_image") as mock_generate_image:
                 with self.assertRaises(SingleArticleDraftError) as exc:
                     generate_single_article_draft(
                         topic="Smart Patio Workflow",
@@ -169,12 +169,12 @@ class SingleArticleFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             with patch(
-                "single_article_flow.generate_article",
+                "automating_wf.content.single_article_flow.generate_article",
                 return_value=article_payload,
             ), patch(
-                "single_article_flow.validate_article_with_repair",
+                "automating_wf.content.single_article_flow.validate_article_with_repair",
                 side_effect=ArticleValidatorError("Missing prompt"),
-            ), patch("single_article_flow.generate_image") as mock_generate_image:
+            ), patch("automating_wf.content.single_article_flow.generate_image") as mock_generate_image:
                 with self.assertRaises(SingleArticleDraftError) as exc:
                     generate_single_article_draft(
                         topic="Smart Patio Workflow",
@@ -193,16 +193,16 @@ class SingleArticleFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             with patch(
-                "single_article_flow.generate_article",
+                "automating_wf.content.single_article_flow.generate_article",
                 return_value=article_payload,
             ), patch(
-                "single_article_flow.load_repair_system_prompt",
+                "automating_wf.content.single_article_flow.load_repair_system_prompt",
                 return_value="Loaded prompt",
             ) as mock_load_prompt, patch(
-                "single_article_flow.validate_article_with_repair",
+                "automating_wf.content.single_article_flow.validate_article_with_repair",
                 return_value=_validator_result(article_payload, repaired=False, attempts_used=0),
             ) as mock_validate, patch(
-                "single_article_flow.generate_image",
+                "automating_wf.content.single_article_flow.generate_image",
                 side_effect=[tmp_path / "hero.png", tmp_path / "detail.png"],
             ):
                 generate_single_article_draft(

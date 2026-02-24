@@ -5,8 +5,8 @@ from os import environ
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from pinterest_analysis import analyze_seed, score_keyword_candidates
-from pinterest_models import PinRecord, SeedScrapeResult
+from automating_wf.analysis.pinterest import analyze_seed, score_keyword_candidates
+from automating_wf.models.pinterest import PinRecord, SeedScrapeResult
 
 
 def _record(title: str, score_total: float, seed: str = "seed") -> PinRecord:
@@ -82,10 +82,10 @@ class PinterestAnalysisTests(unittest.TestCase):
         mock_client.chat.completions.create.return_value = _mock_response(json.dumps(payload))
 
         with tempfile.TemporaryDirectory() as tmp_dir, patch(
-            "pinterest_analysis._build_openai_client",
+            "automating_wf.analysis.pinterest._build_openai_client",
             return_value=(mock_client, "deepseek-chat"),
         ), patch(
-            "pinterest_analysis._load_prompt",
+            "automating_wf.analysis.pinterest._load_prompt",
             return_value="prompt",
         ), patch.dict(
             environ,
@@ -131,10 +131,10 @@ class PinterestAnalysisTests(unittest.TestCase):
         mock_client.chat.completions.create.return_value = _mock_response(json.dumps(payload))
 
         with tempfile.TemporaryDirectory() as tmp_dir, patch(
-            "pinterest_analysis._build_openai_client",
+            "automating_wf.analysis.pinterest._build_openai_client",
             return_value=(mock_client, "deepseek-chat"),
         ), patch(
-            "pinterest_analysis._load_prompt",
+            "automating_wf.analysis.pinterest._load_prompt",
             return_value="prompt",
         ), patch.dict(
             environ,

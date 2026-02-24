@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from automating_wf.engine.config import EngineRunOptions, GenerationResults, PinClicksResults, TrendCandidates
-from automating_wf.export.pinterest_csv import build_csv_path_for_blog, validate_board_mapping_for_blog
+from automating_wf.export.pinterest_csv import validate_board_mapping_for_blog
 from automating_wf.engine.pipeline import (
     MANIFEST_NAME,
     RUN_ROOT,
@@ -357,7 +357,7 @@ def _load_generation_results_from_run(run_id: str, run_dir: Path) -> GenerationR
     if isinstance(summary_payload, dict):
         csv_path = str(summary_payload.get("csv_path", "")).strip()
     if not csv_path and latest_suffix:
-        csv_path = str(build_csv_path_for_blog(latest_suffix))
+        csv_path = str(run_dir / f"pinterest_bulk_upload_{latest_suffix.strip().lower()}.csv")
 
     return GenerationResults(
         run_id=run_id,

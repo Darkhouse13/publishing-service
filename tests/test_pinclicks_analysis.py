@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pinclicks_analysis import rank_pinclicks_keywords
-from pinterest_models import PinRecord, SeedScrapeResult
+from automating_wf.analysis.pinclicks import rank_pinclicks_keywords
+from automating_wf.models.pinterest import PinRecord, SeedScrapeResult
 
 
 def _seed_result(keyword: str, titles: list[str], scores: list[float]) -> SeedScrapeResult:

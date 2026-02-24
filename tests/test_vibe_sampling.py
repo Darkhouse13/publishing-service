@@ -1,15 +1,17 @@
 import unittest
 from unittest.mock import Mock
 
-from app import (
+from automating_wf.ui.streamlit_app import (
     _init_session_state,
     fetch_vibes_for_blog,
     missing_seo_publish_fields,
     maybe_autofill_topic,
     reconcile_topic_flags,
+    sanitize_article_markdown_for_preview,
+)
+from automating_wf.config.blogs import (
     resolve_target_suffix,
     resolve_blog_profile,
-    sanitize_article_markdown_for_preview,
 )
 
 

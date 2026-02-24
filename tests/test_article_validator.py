@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from validator import (
+from automating_wf.content.validator import (
     ArticleValidationFinalError,
     ArticleValidatorError,
     load_repair_system_prompt,
@@ -81,7 +81,7 @@ def _payload(markdown: str, focus_keyword: str = "smart patio workflow") -> dict
 class ArticleValidatorTests(unittest.TestCase):
     def test_pass_through_when_rules_already_pass(self) -> None:
         article_payload = _payload(_valid_markdown())
-        with patch("validator._build_openai_client") as mock_client_builder:
+        with patch("automating_wf.content.validator._build_openai_client") as mock_client_builder:
             result = validate_article_with_repair(
                 article_payload=article_payload,
                 focus_keyword="smart patio workflow",
@@ -112,7 +112,7 @@ class ArticleValidatorTests(unittest.TestCase):
             )
         )
         with patch(
-            "validator._build_openai_client",
+            "automating_wf.content.validator._build_openai_client",
             return_value=(mock_client, "deepseek-chat"),
         ):
             result = validate_article_with_repair(
@@ -148,7 +148,7 @@ class ArticleValidatorTests(unittest.TestCase):
             )
         )
         with patch(
-            "validator._build_openai_client",
+            "automating_wf.content.validator._build_openai_client",
             return_value=(mock_client, "deepseek-chat"),
         ):
             result = validate_article_with_repair(
@@ -182,7 +182,7 @@ class ArticleValidatorTests(unittest.TestCase):
             ),
         ]
         with patch(
-            "validator._build_openai_client",
+            "automating_wf.content.validator._build_openai_client",
             return_value=(mock_client, "deepseek-chat"),
         ):
             result = validate_article_with_repair(
@@ -216,7 +216,7 @@ class ArticleValidatorTests(unittest.TestCase):
             )
         )
         with patch(
-            "validator._build_openai_client",
+            "automating_wf.content.validator._build_openai_client",
             return_value=(mock_client, "deepseek-chat"),
         ):
             with self.assertRaises(ArticleValidationFinalError) as exc:
@@ -239,7 +239,7 @@ class ArticleValidatorTests(unittest.TestCase):
             _response_with_content("still-not-json"),
         ]
         with patch(
-            "validator._build_openai_client",
+            "automating_wf.content.validator._build_openai_client",
             return_value=(mock_client, "deepseek-chat"),
         ):
             with self.assertRaises(ArticleValidationFinalError) as exc:
@@ -275,7 +275,7 @@ class ArticleValidatorTests(unittest.TestCase):
             )
         )
         with patch(
-            "validator._build_openai_client",
+            "automating_wf.content.validator._build_openai_client",
             return_value=(mock_client, "deepseek-chat"),
         ):
             validate_article_with_repair(
@@ -308,7 +308,7 @@ class ArticleValidatorTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir, patch(
-            "validator._build_openai_client",
+            "automating_wf.content.validator._build_openai_client",
             return_value=(mock_client, "deepseek-chat"),
         ):
             artifact_dir = Path(tmp_dir)
@@ -340,7 +340,7 @@ class ArticleValidatorTests(unittest.TestCase):
                 os.environ,
                 {"ARTICLE_VALIDATOR_REPAIR_PROMPT": ""},
                 clear=False,
-            ), patch("validator.REPAIR_PROMPT_FILE", prompt_path):
+            ), patch("automating_wf.content.validator.REPAIR_PROMPT_FILE", prompt_path):
                 prompt = load_repair_system_prompt()
         self.assertEqual(prompt, "File prompt")
 
@@ -352,7 +352,7 @@ class ArticleValidatorTests(unittest.TestCase):
             os.environ,
             {"ARTICLE_VALIDATOR_REPAIR_PROMPT": ""},
             clear=False,
-        ), patch("validator.REPAIR_PROMPT_FILE", missing_path):
+        ), patch("automating_wf.content.validator.REPAIR_PROMPT_FILE", missing_path):
             with self.assertRaises(ArticleValidatorError):
                 load_repair_system_prompt()
 

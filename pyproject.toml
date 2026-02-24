@@ -12,5 +12,10 @@ requires-python = ">=3.11"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[project.scripts]
+pinterest-engine = "automating_wf.engine.pipeline:main"
+wp-onboarding = "automating_wf.wordpress.onboarding:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
