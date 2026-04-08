@@ -19,7 +19,11 @@ from automating_wf.engine.pipeline import (
     run_winner_generation_sync,
 )
 from automating_wf.models.pinterest import PinClicksKeywordScore, SeedScrapeResult
-from automating_wf.scrapers.pinclicks import ScraperError
+from automating_wf.scrapers.pinclicks import (
+    PINCLICKS_SCRAPE_SOURCE_BRAVE,
+    PINCLICKS_SKIP_REASON_AUTHENTICATION_SETUP_REQUIRED,
+    ScraperError,
+)
 
 
 def _opts() -> EngineRunOptions:
@@ -33,6 +37,8 @@ def _opts() -> EngineRunOptions:
         pinclicks_max_records=31,
         winners_count=2,
         publish_status="pending",
+        csv_first_publish_at=None,
+        csv_cadence_minutes=240,
         headed=False,
         resume_run_id=None,
     )
@@ -59,19 +65,24 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     {
                         "keyword": "patio furniture",
                         "rank": 1,
-                        "hybrid_score": 0.91,
-                        "growth_norm": 0.6,
-                        "trend_index_norm": 0.8,
+                        "reach_hat": 0.91,
+                        "reach_confidence": 0.7,
+                        "trend_index_raw": 90.0,
+                        "growth_rate_raw": 35.0,
+                        "consistency_raw": 0.8,
                         "source_count": 5,
+                        "qualified": True,
                     }
                 ],
             ):
                 result = collect_trends_candidates_sync(opts)
 
+            self.assertTrue((run_dir / "run_summary.json").exists())
+
         self.assertIsInstance(result, TrendCandidates)
         self.assertEqual(result.run_id, "20260217_120000")
         self.assertEqual(result.ranked_keywords[0]["keyword"], "patio furniture")
-        self.assertAlmostEqual(result.ranked_keywords[0]["score"], 0.91)
+        self.assertAlmostEqual(result.ranked_keywords[0]["reach_hat"], 0.91)
 
     def test_collect_pinclicks_data_uses_selected_keywords_and_max_records(self) -> None:
         opts = _opts()
@@ -85,6 +96,9 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "automating_wf.engine.pipeline._append_manifest",
+            ) as mock_append_manifest, patch(
+                "automating_wf.engine.pipeline._bootstrap_pinclicks_session_bridge",
+                return_value={"authenticated": True, "setup_required": False},
             ), patch(
                 "automating_wf.engine.pipeline._load_cached_top_keywords",
                 return_value=[{"keyword": "patio furniture", "rank": 1}],
@@ -103,10 +117,14 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                 return_value=[
                     PinClicksKeywordScore(
                         keyword="patio furniture",
-                        total_score=0.88,
-                        frequency_score=1.2,
+                        ctr_hat=0.75,
+                        ctr_confidence=0.6,
+                        reach_hat=0.88,
+                        click_score=0.66,
+                        is_pareto_efficient=True,
+                        outbound_intent_score=0.5,
                         engagement_score=10.1,
-                        intent_score=0.5,
+                        frequency_score=1.2,
                         record_count=12,
                         trend_rank=1,
                         pinclicks_rank=1,
@@ -118,13 +136,67 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     selected_keywords=["patio furniture"],
                     run_id="20260217_120000",
                 )
+            self.assertTrue((run_dir / "run_summary.json").exists())
 
         self.assertEqual(len(results.winners), 1)
         self.assertEqual(results.winners[0]["keyword"], "patio furniture")
+        self.assertEqual(results.winners[0]["scrape_source"], PINCLICKS_SCRAPE_SOURCE_BRAVE)
         self.assertEqual(
             mock_scrape_seed.call_args.kwargs.get("max_records"),
             opts.pinclicks_max_records,
         )
+        statuses = [call.args[1].status for call in mock_append_manifest.call_args_list]
+        self.assertIn("pinclicks_exported", statuses)
+
+    def test_collect_pinclicks_data_marks_visible_row_success_as_scraped(self) -> None:
+        opts = _opts()
+        with TemporaryDirectory() as tmp_dir:
+            run_dir = Path(tmp_dir)
+            with patch(
+                "automating_wf.engine.pipeline._resolve_phase_run_dir",
+                return_value=run_dir,
+            ), patch(
+                "automating_wf.engine.pipeline._load_manifest_entries",
+                return_value=[],
+            ), patch(
+                "automating_wf.engine.pipeline._append_manifest",
+            ) as mock_append_manifest, patch(
+                "automating_wf.engine.pipeline._bootstrap_pinclicks_session_bridge",
+                return_value={"authenticated": True, "setup_required": False},
+            ), patch(
+                "automating_wf.engine.pipeline._load_cached_top_keywords",
+                return_value=[{"keyword": "patio furniture", "rank": 1}],
+            ), patch(
+                "automating_wf.engine.pipeline.scrape_seed",
+                return_value=SeedScrapeResult(
+                    blog_suffix="THE_SUNDAY_PATIO",
+                    seed_keyword="patio furniture",
+                    source_url="https://app.pinclicks.com/pins",
+                    source_file="",
+                    scrape_mode="visible_rows",
+                    diagnostics={
+                        "scrape_mode": "visible_rows",
+                        "raw_item_count": 12,
+                        "rejected_item_count": 3,
+                        "final_record_count": 9,
+                        "engagement_available": True,
+                    },
+                    records=[],
+                    scraped_at="2026-02-17T10:00:00Z",
+                ),
+            ), patch(
+                "automating_wf.engine.pipeline.rank_pinclicks_keywords",
+                return_value=[],
+            ):
+                collect_pinclicks_data_sync(
+                    opts=opts,
+                    selected_keywords=["patio furniture"],
+                    run_id="20260217_120000",
+                )
+            self.assertTrue((run_dir / "run_summary.json").exists())
+
+        statuses = [call.args[1].status for call in mock_append_manifest.call_args_list]
+        self.assertIn("pinclicks_scraped", statuses)
 
     def test_collect_pinclicks_data_returns_structured_skipped_payload(self) -> None:
         opts = _opts()
@@ -138,6 +210,9 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                 return_value=[],
             ), patch(
                 "automating_wf.engine.pipeline._append_manifest",
+            ), patch(
+                "automating_wf.engine.pipeline._bootstrap_pinclicks_session_bridge",
+                return_value={"authenticated": True, "setup_required": False},
             ), patch(
                 "automating_wf.engine.pipeline._load_cached_top_keywords",
                 return_value=[{"keyword": "patio furniture", "rank": 1}],
@@ -232,10 +307,14 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                 "automating_wf.engine.pipeline._running_in_streamlit",
                 return_value=True,
             ), patch(
+                "automating_wf.engine.pipeline._bootstrap_pinclicks_session_bridge",
+                return_value={"authenticated": True, "setup_required": False},
+            ), patch(
                 "automating_wf.engine.pipeline._run_scraper_subprocess",
                 return_value=sample.to_dict(),
             ) as mock_subprocess, patch(
                 "automating_wf.engine.pipeline.scrape_seed",
+                return_value=sample,
             ) as mock_direct_scrape, patch(
                 "automating_wf.engine.pipeline.rank_pinclicks_keywords",
                 return_value=[],
@@ -253,8 +332,8 @@ class PinterestEnginePhaseTests(unittest.TestCase):
     def test_run_winner_generation_returns_generation_results_and_progress(self) -> None:
         opts = _opts()
         winners = [
-            {"keyword": "alpha", "trend_rank": 1, "pinclicks_rank": 1},
-            {"keyword": "beta", "trend_rank": 2, "pinclicks_rank": 2},
+            {"keyword": "alpha", "trend_rank": 1, "pinclicks_rank": 1, "scrape_source": PINCLICKS_SCRAPE_SOURCE_BRAVE},
+            {"keyword": "beta", "trend_rank": 2, "pinclicks_rank": 2, "scrape_source": PINCLICKS_SCRAPE_SOURCE_BRAVE},
         ]
         progress_events: list[tuple[int, int, dict]] = []
 
@@ -302,6 +381,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     run_id="20260217_120000",
                     on_progress=lambda current, total, item: progress_events.append((current, total, item)),
                 )
+            self.assertTrue((run_dir / "run_summary.json").exists())
 
         self.assertEqual(len(results.completed), 1)
         self.assertEqual(len(results.partial), 0)
@@ -313,7 +393,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
 
     def test_run_winner_generation_classifies_csv_failed_as_partial(self) -> None:
         opts = _opts()
-        winners = [{"keyword": "alpha", "trend_rank": 1, "pinclicks_rank": 1}]
+        winners = [{"keyword": "alpha", "trend_rank": 1, "pinclicks_rank": 1, "scrape_source": PINCLICKS_SCRAPE_SOURCE_BRAVE}]
 
         with TemporaryDirectory() as tmp_dir:
             run_dir = Path(tmp_dir)
@@ -367,6 +447,72 @@ class PinterestEnginePhaseTests(unittest.TestCase):
         self.assertEqual(results.partial[0]["keyword"], "alpha")
         self.assertEqual(results.partial[0]["status"], "partial")
 
+    def test_run_winner_generation_requires_cached_result_for_brave_winner(self) -> None:
+        opts = _opts()
+        winners = [{"keyword": "alpha", "trend_rank": 1, "pinclicks_rank": 1, "scrape_source": PINCLICKS_SCRAPE_SOURCE_BRAVE}]
+
+        with TemporaryDirectory() as tmp_dir:
+            run_dir = Path(tmp_dir)
+            with patch(
+                "automating_wf.engine.pipeline._resolve_phase_run_dir",
+                return_value=run_dir,
+            ), patch(
+                "automating_wf.engine.pipeline._resolve_blog_name_from_suffix",
+                return_value="The Sunday Patio",
+            ), patch(
+                "automating_wf.engine.pipeline.validate_board_mapping_for_blog",
+            ), patch(
+                "automating_wf.engine.pipeline._load_manifest_entries",
+                return_value=[],
+            ), patch(
+                "automating_wf.engine.pipeline._latest_status_by_seed",
+                return_value={},
+            ):
+                results = run_winner_generation_sync(
+                    opts=opts,
+                    winners=winners,
+                    run_id="20260217_120000",
+                )
+
+        self.assertEqual(len(results.failed_pre_publish), 1)
+        self.assertEqual(results.failed_pre_publish[0]["failure_stage"], "pinclicks_cache_missing")
+
+    def test_run_winner_generation_synthesizes_manual_skip_winner(self) -> None:
+        opts = _opts()
+        winners = [{"keyword": "alpha", "trend_rank": 1, "pinclicks_rank": 0, "scrape_source": "synthetic"}]
+
+        with TemporaryDirectory() as tmp_dir:
+            run_dir = Path(tmp_dir)
+            with patch(
+                "automating_wf.engine.pipeline._resolve_phase_run_dir",
+                return_value=run_dir,
+            ), patch(
+                "automating_wf.engine.pipeline._resolve_blog_name_from_suffix",
+                return_value="The Sunday Patio",
+            ), patch(
+                "automating_wf.engine.pipeline.validate_board_mapping_for_blog",
+            ), patch(
+                "automating_wf.engine.pipeline._load_manifest_entries",
+                return_value=[],
+            ), patch(
+                "automating_wf.engine.pipeline._latest_status_by_seed",
+                return_value={},
+            ), patch(
+                "automating_wf.engine.pipeline.load_repair_system_prompt",
+                return_value="repair",
+            ), patch(
+                "automating_wf.engine.pipeline._process_winner",
+                return_value={"keyword": "alpha", "status": "completed", "title": "Alpha"},
+            ) as mock_process:
+                results = run_winner_generation_sync(
+                    opts=opts,
+                    winners=winners,
+                    run_id="20260217_120000",
+                )
+
+        self.assertEqual(len(results.completed), 1)
+        self.assertEqual(mock_process.call_args.kwargs["scrape_result"].source_file, "synthesized")
+
     def test_run_engine_preserves_cli_shape_and_calls_phases_in_order(self) -> None:
         opts = _opts()
         opts.seed_keywords = ["one", "two", "three"]
@@ -395,7 +541,7 @@ class PinterestEnginePhaseTests(unittest.TestCase):
                     or type(
                         "PinClicksResultStub",
                         (),
-                        {"winners": [{"keyword": "kw1", "trend_rank": 1, "pinclicks_rank": 1}], "run_id": "20260217_120000"},
+                        {"winners": [{"keyword": "kw1", "trend_rank": 1, "pinclicks_rank": 1, "scrape_source": PINCLICKS_SCRAPE_SOURCE_BRAVE}], "run_id": "20260217_120000"},
                     )()
                 ),
             ), patch(

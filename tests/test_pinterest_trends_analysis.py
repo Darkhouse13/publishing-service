@@ -1,9 +1,10 @@
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from automating_wf.analysis.trends import analyze_trends_exports
+from automating_wf.analysis.trends import SCORING_VERSION, analyze_trends_exports
 
 
 class PinterestTrendsAnalysisTests(unittest.TestCase):
@@ -38,6 +39,8 @@ class PinterestTrendsAnalysisTests(unittest.TestCase):
         self.assertEqual(len(candidates), 1)
         self.assertEqual(candidates[0].rank, 1)
         self.assertEqual(candidates[0].keyword.lower(), "patio furniture")
+        self.assertTrue(candidates[0].reach_hat > 0)
+        self.assertTrue(candidates[0].qualified)
 
     def test_analyze_trends_exports_supports_xlsx(self) -> None:
         try:
@@ -129,6 +132,100 @@ class PinterestTrendsAnalysisTests(unittest.TestCase):
         self.assertIn("patio layout", keywords)
         self.assertIn("backyard patio", keywords)
         self.assertNotIn("small tattoos", keywords)
+
+    def test_analyze_trends_exports_writes_scoring_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            export_file = tmp_path / "trends_seed.csv"
+            self._write_csv(
+                export_file,
+                [
+                    {"Keyword": "patio furniture", "Trend Index": 80, "Growth": "20%", "Week 1": 70, "Week 2": 80},
+                ],
+            )
+            analyze_trends_exports(
+                export_files_by_seed={"patio": [str(export_file)]},
+                run_dir=tmp_path,
+                top_n=5,
+            )
+            metadata = json.loads((tmp_path / "trends_scoring_metadata.json").read_text())
+
+        self.assertEqual(metadata["scoring_version"], SCORING_VERSION)
+
+    def test_disqualifies_below_min_reach_hat(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            export_file = tmp_path / "trends_seed.csv"
+            self._write_csv(
+                export_file,
+                [
+                    {"Keyword": "patio furniture", "Trend Index": 95, "Growth": "50%", "Week 1": 80, "Week 2": 90},
+                    {"Keyword": "patio rugs", "Trend Index": 10, "Growth": "1%", "Week 1": 5, "Week 2": 8},
+                ],
+            )
+            candidates = analyze_trends_exports(
+                export_files_by_seed={"patio": [str(export_file)]},
+                run_dir=tmp_path,
+                top_n=10,
+                min_reach_hat=0.9,
+            )
+            all_cands = json.loads((tmp_path / "trends_keyword_candidates.json").read_text())
+
+        qualified = [c for c in all_cands if c["qualified"]]
+        disqualified = [c for c in all_cands if not c["qualified"]]
+        self.assertEqual(len(candidates), len(qualified))
+        self.assertTrue(len(disqualified) > 0 or len(all_cands) == 1)
+
+    def test_near_duplicate_suppression(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            export_file = tmp_path / "trends_seed.csv"
+            self._write_csv(
+                export_file,
+                [
+                    {"Keyword": "patio furniture", "Trend Index": 90, "Growth": "30%", "Week 1": 80, "Week 2": 88},
+                    {"Keyword": "furniture patio", "Trend Index": 70, "Growth": "20%", "Week 1": 60, "Week 2": 68},
+                    {"Keyword": "patio chairs", "Trend Index": 60, "Growth": "10%", "Week 1": 55, "Week 2": 62},
+                ],
+            )
+            candidates = analyze_trends_exports(
+                export_files_by_seed={"patio": [str(export_file)]},
+                run_dir=tmp_path,
+                top_n=10,
+            )
+            all_cands = json.loads((tmp_path / "trends_keyword_candidates.json").read_text())
+            metadata = json.loads((tmp_path / "trends_scoring_metadata.json").read_text())
+
+        # "patio furniture" and "furniture patio" should collapse
+        winner_keywords = [c.keyword.lower() for c in candidates]
+        self.assertIn("patio furniture", winner_keywords)
+        self.assertNotIn("furniture patio", winner_keywords)
+        # "patio chairs" is distinct and should survive
+        self.assertIn("patio chairs", winner_keywords)
+        # Check suppression metadata
+        suppressed = [c for c in all_cands if c.get("suppressed_by")]
+        self.assertTrue(len(suppressed) >= 1)
+        self.assertGreaterEqual(metadata["suppressed_count"], 1)
+
+    def test_include_keyword_ratio_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            export_file = tmp_path / "trends_seed.csv"
+            self._write_csv(
+                export_file,
+                [
+                    {"Keyword": "patio lights", "Trend Index": 80, "Growth": "20%", "Week 1": 70, "Week 2": 78},
+                ],
+            )
+            candidates = analyze_trends_exports(
+                export_files_by_seed={"patio": [str(export_file)]},
+                run_dir=tmp_path,
+                top_n=5,
+            )
+
+        self.assertEqual(len(candidates), 1)
+        # Default: include_keyword_applied is True, so ratio should be 1.0
+        self.assertAlmostEqual(candidates[0].include_keyword_ratio, 1.0)
 
 
 if __name__ == "__main__":

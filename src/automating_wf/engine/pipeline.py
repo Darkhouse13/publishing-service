@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import re
 import subprocess
+import time
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +25,7 @@ from automating_wf.config.blogs import (
     BLOG_CONFIGS,
     resolve_blog_config,
     resolve_blog_profile,
+    resolve_prompt_type,
     suggest_primary_category,
 )
 from automating_wf.content.generators import (
@@ -44,17 +47,26 @@ from automating_wf.export.pinterest_csv import (
     DEFAULT_CADENCE_MINUTES,
     ExporterError,
     append_csv_row,
+    csv_timezone_name,
+    preview_publish_schedule,
     resolve_board_name,
     validate_board_mapping_for_blog,
 )
 from automating_wf.models.pinterest import CsvRow, PinRecord, RunManifestEntry, SeedScrapeResult
 from automating_wf.scrapers.pinclicks import (
+    PINCLICKS_SCRAPE_SOURCE_BRAVE,
+    PINCLICKS_SKIP_REASON_AUTHENTICATION_SETUP_REQUIRED,
     SCRAPE_RETRY_ATTEMPTS,
     ScraperError,
     _classify_scrape_error,
+    ensure_pinclicks_brave_session,
     scrape_seed,
 )
-from automating_wf.analysis.trends import TrendsAnalysisError, analyze_trends_exports
+from automating_wf.analysis.trends import (
+    SCORING_VERSION as TRENDS_SCORING_VERSION,
+    TrendsAnalysisError,
+    analyze_trends_exports,
+)
 from automating_wf.scrapers.trends import TRENDS_RETRY_ATTEMPTS, TrendsScraperError, scrape_trends_exports
 from automating_wf.wordpress.uploader import (
     WordPressUploadError,
@@ -68,6 +80,7 @@ from automating_wf.wordpress.uploader import (
 RUN_ROOT = Path("tmp") / "pinterest_engine"
 MANIFEST_NAME = "manifest.jsonl"
 SUMMARY_NAME = "run_summary.json"
+RUN_OPTIONS_NAME = "run_options.json"
 TRENDS_TOP_KEYWORDS_FILE = "trends_top_keywords.json"
 
 
@@ -85,6 +98,7 @@ TERMINAL_WINNER_STATUSES = {
 }
 TERMINAL_PINCLICKS_CACHE_STATUSES = {
     "pinclicks_exported",
+    "pinclicks_scraped",
     "pinclicks_ranked",
     "winner_processed",
     "wp_published",
@@ -95,6 +109,7 @@ TERMINAL_PINCLICKS_CACHE_STATUSES = {
     "wp_failed",
     "insufficient_signal",
 }
+PINCLICKS_STATUS_SCRAPED = "pinclicks_scraped"
 
 
 class EngineError(RuntimeError):
@@ -209,6 +224,9 @@ def _seed_scrape_result_from_dict(payload: dict[str, Any]) -> SeedScrapeResult:
         source_file=str(payload.get("source_file", "")),
         records=records,
         scraped_at=str(payload.get("scraped_at", "")),
+        scrape_mode=str(payload.get("scrape_mode", "")).strip()
+        or ("export" if str(payload.get("source_file", "")).strip() else "visible_rows"),
+        diagnostics=dict(payload.get("diagnostics", {})) if isinstance(payload.get("diagnostics"), dict) else {},
     )
 
 
@@ -266,9 +284,9 @@ def _scrape_seed_bridge(
     max_records: int,
     max_attempts: int,
 ) -> SeedScrapeResult:
-    """Bridge PinClicks seed scraping through subprocess only in Streamlit runtime."""
+    """Run PinClicks scrape_seed, routing through subprocess when in Streamlit."""
     if _running_in_streamlit():
-        raw_result = _run_scraper_subprocess(
+        raw = _run_scraper_subprocess(
             {
                 "action": "scrape_pinclicks",
                 "seed_keyword": seed_keyword,
@@ -279,7 +297,7 @@ def _scrape_seed_bridge(
                 "max_attempts": max_attempts,
             }
         )
-        return _seed_scrape_result_from_dict(raw_result)
+        return _seed_scrape_result_from_dict(raw)
 
     return scrape_seed(
         seed_keyword=seed_keyword,
@@ -288,6 +306,30 @@ def _scrape_seed_bridge(
         headed=headed,
         max_records=max_records,
         max_attempts=max_attempts,
+    )
+
+
+def _bootstrap_pinclicks_session_bridge(
+    *,
+    headed: bool,
+    allow_manual_setup: bool,
+    setup_timeout_seconds: int = 600,
+) -> dict[str, Any]:
+    """Validate or bootstrap the PinClicks Brave session, using subprocess in Streamlit."""
+    if _running_in_streamlit():
+        return _run_scraper_subprocess(
+            {
+                "action": "bootstrap_pinclicks_session",
+                "headed": headed,
+                "allow_manual_setup": allow_manual_setup,
+                "setup_timeout_seconds": setup_timeout_seconds,
+            }
+        )
+
+    return ensure_pinclicks_brave_session(
+        headed=headed,
+        allow_manual_setup=allow_manual_setup,
+        setup_timeout_seconds=setup_timeout_seconds,
     )
 
 
@@ -364,11 +406,65 @@ def _manifest_path(run_dir: Path) -> Path:
     return run_dir / MANIFEST_NAME
 
 
+def _run_options_path(run_dir: Path) -> Path:
+    return run_dir / RUN_OPTIONS_NAME
+
+
 def _append_manifest(run_dir: Path, entry: RunManifestEntry) -> None:
     manifest = _manifest_path(run_dir)
     _ensure_dir(manifest.parent)
     with manifest.open("a", encoding="utf-8") as file_handle:
         file_handle.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
+
+
+def _write_run_options(run_dir: Path, opts: EngineRunOptions, *, overwrite: bool = False) -> None:
+    path = _run_options_path(run_dir)
+    if path.exists() and not overwrite:
+        return
+    seed_keywords = getattr(opts, "seed_keywords", [])
+    if isinstance(seed_keywords, list):
+        serialized_seed_keywords = [str(item).strip() for item in seed_keywords if str(item).strip()]
+    else:
+        serialized_seed_keywords = []
+
+    selected_trend_keywords = getattr(opts, "selected_trend_keywords", [])
+    if isinstance(selected_trend_keywords, list):
+        serialized_selected_keywords = [str(item).strip() for item in selected_trend_keywords if str(item).strip()]
+    else:
+        serialized_selected_keywords = []
+    payload = {
+        "blog_suffix": str(getattr(opts, "blog_suffix", "")).strip(),
+        "seed_keywords": serialized_seed_keywords,
+        "trends_region": str(getattr(opts, "trends_region", "")).strip(),
+        "trends_range": str(getattr(opts, "trends_range", "")).strip(),
+        "trends_top_n": int(getattr(opts, "trends_top_n", 0) or 0),
+        "selected_trend_keywords": serialized_selected_keywords,
+        "pinclicks_max_records": int(getattr(opts, "pinclicks_max_records", 0) or 0),
+        "winners_count": int(getattr(opts, "winners_count", 0) or 0),
+        "publish_status": str(getattr(opts, "publish_status", "")).strip(),
+        "csv_first_publish_at": str(getattr(opts, "csv_first_publish_at", "")).strip() or None,
+        "csv_cadence_minutes": int(getattr(opts, "csv_cadence_minutes", DEFAULT_CADENCE_MINUTES) or DEFAULT_CADENCE_MINUTES),
+        "csv_timezone": csv_timezone_name(),
+        "csv_preview_slots": preview_publish_schedule(
+            first_publish_at=str(getattr(opts, "csv_first_publish_at", "")).strip() or None,
+            cadence_minutes=int(getattr(opts, "csv_cadence_minutes", DEFAULT_CADENCE_MINUTES) or DEFAULT_CADENCE_MINUTES),
+            count=min(5, max(1, int(getattr(opts, "winners_count", 1) or 1))),
+        ),
+        "headed": bool(getattr(opts, "headed", False)),
+        "resume_run_id": str(getattr(opts, "resume_run_id", "")).strip() or None,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _read_run_options(run_dir: Path) -> dict[str, Any]:
+    path = _run_options_path(run_dir)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _load_manifest_entries(run_dir: Path) -> list[dict[str, Any]]:
@@ -510,6 +606,38 @@ def _load_seed_scrape_result(path: Path) -> SeedScrapeResult:
         source_file=str(payload.get("source_file", "")),
         records=records,
         scraped_at=str(payload.get("scraped_at", "")),
+        scrape_mode=str(payload.get("scrape_mode", "")).strip()
+        or ("export" if str(payload.get("source_file", "")).strip() else "visible_rows"),
+        diagnostics=dict(payload.get("diagnostics", {})) if isinstance(payload.get("diagnostics"), dict) else {},
+    )
+
+
+def _synthesize_scrape_result(keyword: str, blog_suffix: str) -> SeedScrapeResult:
+    """Create minimal SeedScrapeResult when PinClicks was skipped."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    records = [
+        PinRecord(
+            seed_keyword=keyword,
+            rank=i,
+            pin_url="",
+            pin_id=f"synth_{i}",
+            title=keyword,
+            description=keyword,
+            tags=[keyword],
+            engagement={},
+            scraped_at=now,
+        )
+        for i in range(1, 6)
+    ]
+    return SeedScrapeResult(
+        blog_suffix=blog_suffix,
+        seed_keyword=keyword,
+        source_url="",
+        records=records,
+        scraped_at=now,
+        source_file="synthesized",
+        scrape_mode="visible_rows",
+        diagnostics={"scrape_mode": "visible_rows", "engagement_available": False},
     )
 
 
@@ -538,6 +666,8 @@ def _replay_pending_csv(
             continue
         csv_path_raw = details.get("csv_path")
         csv_path = Path(str(csv_path_raw)) if isinstance(csv_path_raw, str) and csv_path_raw.strip() else _run_csv_path(run_dir, blog_suffix)
+        csv_first_publish_at = str(details.get("csv_first_publish_at", "")).strip() or None
+        csv_cadence_minutes = int(details.get("csv_cadence_minutes", cadence_minutes) or cadence_minutes)
         pending_board = str(pending_row.get("Pinterest board", pending_row.get("Pinterest Board", ""))).strip()
         if not pending_board:
             supporting_terms = [
@@ -569,7 +699,8 @@ def _replay_pending_csv(
             result = append_csv_row(
                 row=row,
                 csv_path=csv_path,
-                cadence_minutes=cadence_minutes,
+                cadence_minutes=csv_cadence_minutes,
+                initial_publish_date=csv_first_publish_at,
             )
         except Exception as exc:
             failed += 1
@@ -582,7 +713,14 @@ def _replay_pending_csv(
                     status="csv_failed",
                     failure_stage="csv_failed",
                     source_stage="csv",
-                    details={"replay_error": str(exc), "pending_csv_row": row.to_dict(), "csv_path": str(csv_path)},
+                    details={
+                        "replay_error": str(exc),
+                        "pending_csv_row": row.to_dict(),
+                        "csv_path": str(csv_path),
+                        "csv_first_publish_at": csv_first_publish_at or "",
+                        "csv_cadence_minutes": int(csv_cadence_minutes),
+                        "csv_timezone": csv_timezone_name(),
+                    },
                 ),
             )
             continue
@@ -606,7 +744,13 @@ def _replay_pending_csv(
                 public_permalink=str(row.link),
                 requires_wp_publish_before=publish_date,
                 source_stage="csv",
-                details={"csv_result": result, "replayed": True},
+                details={
+                    "csv_result": result,
+                    "replayed": True,
+                    "csv_first_publish_at": csv_first_publish_at or "",
+                    "csv_cadence_minutes": int(csv_cadence_minutes),
+                    "csv_timezone": csv_timezone_name(),
+                },
             ),
         )
     return {
@@ -618,12 +762,38 @@ def _replay_pending_csv(
 
 def _build_summary(run_dir: Path, *, blog_suffix: str | None = None) -> dict[str, Any]:
     entries = _load_manifest_entries(run_dir)
+    run_options = _read_run_options(run_dir)
     status_counts: dict[str, int] = {}
     publish_checklist: list[dict[str, str]] = []
+    stage3_scrape_modes: dict[str, int] = {}
+    stage3_quality = {
+        "keywords_succeeded": 0,
+        "raw_rows": 0,
+        "rejected_rows": 0,
+        "kept_rows": 0,
+        "engagement_available_keywords": 0,
+        "engagement_unavailable_keywords": 0,
+    }
     for entry in entries:
         status = str(entry.get("status", "")).strip()
         if status:
             status_counts[status] = status_counts.get(status, 0) + 1
+        details = entry.get("details", {})
+        if not isinstance(details, dict):
+            details = {}
+        if status in {"pinclicks_exported", PINCLICKS_STATUS_SCRAPED}:
+            scrape_mode = str(details.get("scrape_mode", "")).strip() or (
+                "export" if str(entry.get("source_file", "")).strip() else "visible_rows"
+            )
+            stage3_scrape_modes[scrape_mode] = stage3_scrape_modes.get(scrape_mode, 0) + 1
+            stage3_quality["keywords_succeeded"] += 1
+            stage3_quality["raw_rows"] += int(details.get("raw_item_count", 0) or 0)
+            stage3_quality["rejected_rows"] += int(details.get("rejected_item_count", 0) or 0)
+            stage3_quality["kept_rows"] += int(details.get("final_record_count", details.get("record_count", 0)) or 0)
+            if bool(details.get("engagement_available", False)):
+                stage3_quality["engagement_available_keywords"] += 1
+            else:
+                stage3_quality["engagement_unavailable_keywords"] += 1
         publish_before = str(entry.get("requires_wp_publish_before", "")).strip()
         permalink = str(entry.get("public_permalink", "")).strip()
         if status == "csv_appended" and publish_before and permalink:
@@ -642,12 +812,39 @@ def _build_summary(run_dir: Path, *, blog_suffix: str | None = None) -> dict[str
                 suffix = candidate
                 break
     csv_path = str(_run_csv_path(run_dir, suffix)) if suffix else ""
+    csv_cadence_minutes = int(run_options.get("csv_cadence_minutes", DEFAULT_CADENCE_MINUTES) or DEFAULT_CADENCE_MINUTES)
+    csv_first_publish_at = str(run_options.get("csv_first_publish_at", "") or "").strip() or None
+    preview_slots = run_options.get("csv_preview_slots")
+    if not isinstance(preview_slots, list):
+        preview_slots = preview_publish_schedule(
+            first_publish_at=csv_first_publish_at,
+            cadence_minutes=csv_cadence_minutes,
+            count=5,
+        )
+    csv_schedule = {
+        "first_publish_at": csv_first_publish_at,
+        "cadence_minutes": csv_cadence_minutes,
+        "timezone": str(run_options.get("csv_timezone", "")).strip() or csv_timezone_name(),
+        "preview_slots": preview_slots,
+    }
     return {
         "run_dir": str(run_dir),
         "status_counts": status_counts,
+        "stage3_scrape_modes": stage3_scrape_modes,
+        "stage3_quality": stage3_quality,
+        "csv_schedule": csv_schedule,
         "publish_checklist": publish_checklist,
         "csv_path": csv_path,
     }
+
+
+def _write_summary(run_dir: Path, *, blog_suffix: str | None = None) -> dict[str, Any]:
+    summary = _build_summary(run_dir, blog_suffix=blog_suffix)
+    (run_dir / SUMMARY_NAME).write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return summary
 
 
 def _result_title_from_entry_details(details: dict[str, Any]) -> str:
@@ -782,6 +979,8 @@ def _process_winner(
     pinclicks_rank: int,
     repair_system_prompt: str,
     publish_status: str = "draft",
+    csv_first_publish_at: str | None = None,
+    csv_cadence_minutes: int = DEFAULT_CADENCE_MINUTES,
 ) -> dict[str, Any]:
     seed_keyword = scrape_result.seed_keyword
     seed_dir = run_dir / "winners" / _seed_slug(seed_keyword)
@@ -910,6 +1109,7 @@ def _process_winner(
             vibe=brain_output.cluster_label,
             blog_profile=blog_profile,
             focus_keyword=brain_output.primary_keyword,
+            prompt_type=resolve_prompt_type(blog_name),
         )
     except ArticleValidationError as exc:
         generation_errors = list(exc.errors or [])
@@ -1095,12 +1295,12 @@ def _process_winner(
         ),
     )
     csv_path = _run_csv_path(run_dir, blog_suffix)
-    cadence_minutes = _int_env("PINTEREST_CSV_CADENCE_MINUTES", DEFAULT_CADENCE_MINUTES)
     try:
         csv_result = append_csv_row(
             row=csv_row,
             csv_path=csv_path,
-            cadence_minutes=cadence_minutes,
+            cadence_minutes=max(1, int(csv_cadence_minutes)),
+            initial_publish_date=csv_first_publish_at,
         )
     except Exception as exc:
         _append_manifest(
@@ -1122,6 +1322,9 @@ def _process_winner(
                     "error": str(exc),
                     "pending_csv_row": csv_row.to_dict(),
                     "csv_path": str(csv_path),
+                    "csv_first_publish_at": csv_first_publish_at or "",
+                    "csv_cadence_minutes": int(csv_cadence_minutes),
+                    "csv_timezone": csv_timezone_name(),
                 },
             ),
         )
@@ -1152,7 +1355,12 @@ def _process_winner(
             source_file=scrape_result.source_file,
             keyword_rank_trends=trend_rank,
             keyword_rank_pinclicks=pinclicks_rank,
-            details={"csv_result": csv_result},
+            details={
+                "csv_result": csv_result,
+                "csv_first_publish_at": csv_first_publish_at or "",
+                "csv_cadence_minutes": int(csv_cadence_minutes),
+                "csv_timezone": csv_timezone_name(),
+            },
         ),
     )
     return {
@@ -1172,6 +1380,18 @@ def _load_cached_top_keywords(run_dir: Path) -> list[dict[str, Any]]:
     file_path = run_dir / "trends_analysis" / TRENDS_TOP_KEYWORDS_FILE
     if not file_path.exists():
         return []
+
+    # Cache invalidation: reject artifacts produced by an older scoring version.
+    metadata_path = run_dir / "trends_analysis" / "trends_scoring_metadata.json"
+    if metadata_path.exists():
+        try:
+            meta = json.loads(metadata_path.read_text(encoding="utf-8"))
+            cached_version = str(meta.get("scoring_version", "")).strip()
+            if cached_version and cached_version != TRENDS_SCORING_VERSION:
+                return []
+        except Exception:
+            pass
+
     payload = json.loads(file_path.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
         return []
@@ -1214,13 +1434,19 @@ def _safe_winner_dict(item: dict[str, Any]) -> dict[str, Any]:
     """Normalize winner payload values into stable serializable types."""
     return {
         "keyword": str(item.get("keyword", "")).strip(),
-        "total_score": float(item.get("total_score", 0.0) or 0.0),
-        "frequency_score": float(item.get("frequency_score", 0.0) or 0.0),
+        "reach_hat": float(item.get("reach_hat", 0.0) or 0.0),
+        "ctr_hat": float(item.get("ctr_hat", 0.0) or 0.0),
+        "click_score": float(item.get("click_score", 0.0) or 0.0),
+        "is_pareto_efficient": bool(item.get("is_pareto_efficient", False)),
+        "selection_reason": str(item.get("selection_reason", "")).strip(),
+        "outbound_intent_score": float(item.get("outbound_intent_score", 0.0) or 0.0),
         "engagement_score": float(item.get("engagement_score", 0.0) or 0.0),
-        "intent_score": float(item.get("intent_score", 0.0) or 0.0),
+        "frequency_score": float(item.get("frequency_score", 0.0) or 0.0),
         "record_count": int(item.get("record_count", 0) or 0),
+        "engagement_available": bool(item.get("engagement_available", True)),
         "trend_rank": int(item.get("trend_rank", 0) or 0),
         "pinclicks_rank": int(item.get("pinclicks_rank", 0) or 0),
+        "scrape_source": str(item.get("scrape_source", "")).strip(),
     }
 
 
@@ -1250,6 +1476,7 @@ def _collect_trends_candidates_sync(opts: EngineRunOptions) -> TrendCandidates:
     validate_board_mapping_for_blog(suffix)
 
     run_id, run_dir = _resolve_run_dir(resume=opts.resume_run_id)
+    _write_run_options(run_dir, opts)
     entries = _load_manifest_entries(run_dir)
     latest_by_seed = _latest_status_by_seed(entries)
     _replay_pending_csv(
@@ -1294,6 +1521,8 @@ def _collect_trends_candidates_sync(opts: EngineRunOptions) -> TrendCandidates:
             top_n=opts.trends_top_n,
             region=opts.trends_region,
             time_range=opts.trends_range,
+            min_reach_hat=opts.min_reach_hat,
+            min_source_count=opts.min_source_count,
         )
         top_keywords_payload = [item.to_dict() for item in top_candidates]
         _append_manifest(
@@ -1321,20 +1550,24 @@ def _collect_trends_candidates_sync(opts: EngineRunOptions) -> TrendCandidates:
             {
                 "keyword": keyword,
                 "rank": int(item.get("rank", 0) or 0),
-                "score": float(item.get("hybrid_score", 0.0) or 0.0),
-                "trend_direction": float(item.get("growth_norm", 0.0) or 0.0),
-                "volume_indicator": float(item.get("trend_index_norm", 0.0) or 0.0),
+                "reach_hat": float(item.get("reach_hat", 0.0) or 0.0),
+                "reach_confidence": float(item.get("reach_confidence", 0.0) or 0.0),
+                "trend_index_raw": float(item.get("trend_index_raw", 0.0) or 0.0),
+                "growth_rate_raw": float(item.get("growth_rate_raw", 0.0) or 0.0),
                 "source_count": int(item.get("source_count", 0) or 0),
+                "qualified": bool(item.get("qualified", True)),
             }
         )
 
     raw_trends_count = _read_raw_trends_count(trends_analysis_dir)
-    return TrendCandidates(
+    result = TrendCandidates(
         run_id=run_id,
         run_dir=str(run_dir),
         ranked_keywords=ranked_keywords,
         raw_trends_count=raw_trends_count,
     )
+    _write_summary(run_dir, blog_suffix=suffix)
+    return result
 
 
 async def collect_trends_candidates(opts: EngineRunOptions) -> TrendCandidates:
@@ -1355,16 +1588,21 @@ def _collect_pinclicks_data_sync(
     """Phase 2 sync implementation: scrape/rank PinClicks data for selected keywords."""
     run_dir = _resolve_phase_run_dir(run_id)
     suffix = opts.blog_suffix.strip().upper()
+    _write_run_options(run_dir, opts)
     entries = _load_manifest_entries(run_dir)
     latest_by_seed = _latest_status_by_seed(entries)
 
     trends_payload = _load_cached_top_keywords(run_dir)
-    trend_rank_map = {
-        keyword: int(item.get("rank", 0))
-        for item in trends_payload
-        for keyword in [str(item.get("keyword", "")).strip()]
-        if _is_valid_trend_keyword(keyword)
-    }
+    trend_rank_map: dict[str, int] = {}
+    reach_hat_map: dict[str, float] = {}
+    reach_confidence_map: dict[str, float] = {}
+    for item in trends_payload:
+        keyword = str(item.get("keyword", "")).strip()
+        if not _is_valid_trend_keyword(keyword):
+            continue
+        trend_rank_map[keyword] = int(item.get("rank", 0))
+        reach_hat_map[keyword] = float(item.get("reach_hat", 0.5) or 0.5)
+        reach_confidence_map[keyword] = float(item.get("reach_confidence", 0.5) or 0.5)
 
     candidate_keywords = _clean_keyword_list(selected_keywords)
     if not candidate_keywords:
@@ -1378,7 +1616,68 @@ def _collect_pinclicks_data_sync(
     skipped: list[dict[str, Any]] = []
     pinclicks_exports_dir = run_dir / "pinclicks_exports"
     _ensure_dir(pinclicks_exports_dir)
-    for keyword in candidate_keywords:
+    # --- Session preflight ---
+    try:
+        session_status = _bootstrap_pinclicks_session_bridge(
+            headed=opts.headed,
+            allow_manual_setup=False,
+            setup_timeout_seconds=30,
+        )
+        if not bool(session_status.get("authenticated", False)):
+            skipped.append(
+                {
+                    "keyword": "__preflight__",
+                    "reason": PINCLICKS_SKIP_REASON_AUTHENTICATION_SETUP_REQUIRED,
+                    "error": str(session_status.get("message", "")).strip()
+                    or "PinClicks Stage 3 setup is required before scraping.",
+                    "session_expired": bool(session_status.get("session_expired", False)),
+                    "expired_cookies": session_status.get("expired_cookies", []),
+                    "expired_at": session_status.get("expired_at", {}),
+                    "attempts": 0,
+                    "used_headed_fallback": False,
+                    "source_stage": "pinclicks",
+                }
+            )
+            result = PinClicksResults(
+                run_id=run_id,
+                run_dir=str(run_dir),
+                winners=[],
+                skipped=skipped,
+            )
+            _write_summary(run_dir, blog_suffix=suffix)
+            return result
+    except Exception as exc:
+        skipped.append(
+            {
+                "keyword": "__preflight__",
+                "reason": _classify_scrape_error(exc),
+                "error": str(exc),
+                "attempts": 0,
+                "used_headed_fallback": False,
+                "source_stage": "pinclicks",
+            }
+        )
+        result = PinClicksResults(
+            run_id=run_id,
+            run_dir=str(run_dir),
+            winners=[],
+            skipped=skipped,
+        )
+        _write_summary(run_dir, blog_suffix=suffix)
+        return result
+
+    # --- Circuit breaker state ---
+    _CB_AUTH_REASONS = {
+        "authentication_failed",
+        PINCLICKS_SKIP_REASON_AUTHENTICATION_SETUP_REQUIRED,
+    }
+    consecutive_failures = 0
+    consecutive_auth_failures = 0
+
+    for idx, keyword in enumerate(candidate_keywords):
+        if idx > 0:
+            time.sleep(random.uniform(0.5, 1.2))
+
         keyword_slug = _seed_slug(keyword)
         cached_path = pinclicks_exports_dir / keyword_slug / "seed_scrape_result.json"
         latest = latest_by_seed.get(keyword)
@@ -1387,6 +1686,8 @@ def _collect_pinclicks_data_sync(
             if latest_status in TERMINAL_PINCLICKS_CACHE_STATUSES:
                 try:
                     pinclicks_results[keyword] = _load_seed_scrape_result(cached_path)
+                    consecutive_failures = 0
+                    consecutive_auth_failures = 0
                     continue
                 except Exception:
                     pass
@@ -1433,20 +1734,58 @@ def _collect_pinclicks_data_sync(
                     "source_stage": "pinclicks",
                 }
             )
+
+            # Circuit breaker tracking (3a)
+            consecutive_failures += 1
+            if reason in _CB_AUTH_REASONS:
+                consecutive_auth_failures += 1
+            else:
+                consecutive_auth_failures = 0
+
+            if consecutive_auth_failures >= 2 or consecutive_failures >= 3:
+                remaining = candidate_keywords[idx + 1:]
+                for aborted_kw in remaining:
+                    skipped.append({
+                        "keyword": aborted_kw,
+                        "reason": "circuit_breaker_tripped",
+                        "error": f"Aborted after {consecutive_failures} consecutive failures (last: {reason})",
+                        "attempts": 0,
+                        "used_headed_fallback": False,
+                        "source_stage": "pinclicks",
+                    })
+                break
+
             continue
 
+        consecutive_failures = 0
+        consecutive_auth_failures = 0
         pinclicks_results[keyword] = scrape_result
+        scrape_mode = str(scrape_result.scrape_mode or "").strip() or (
+            "export" if scrape_result.source_file else "visible_rows"
+        )
+        diagnostics = dict(scrape_result.diagnostics or {})
+        success_status = "pinclicks_exported" if scrape_mode == "export" else PINCLICKS_STATUS_SCRAPED
         _append_manifest(
             run_dir,
             RunManifestEntry.create(
                 run_id=run_id,
                 blog_suffix=suffix,
                 seed_keyword=keyword,
-                status="pinclicks_exported",
+                status=success_status,
                 source_stage="pinclicks",
                 source_file=scrape_result.source_file,
                 keyword_rank_trends=trend_rank_map.get(keyword, 0),
-                details={"record_count": len(scrape_result.records), "source_url": scrape_result.source_url},
+                details={
+                    "record_count": len(scrape_result.records),
+                    "source_url": scrape_result.source_url,
+                    "source_file": scrape_result.source_file,
+                    "scrape_mode": scrape_mode,
+                    "raw_item_count": int(diagnostics.get("raw_item_count", 0) or 0),
+                    "rejected_item_count": int(diagnostics.get("rejected_item_count", 0) or 0),
+                    "kept_item_count": int(diagnostics.get("kept_item_count", len(scrape_result.records)) or 0),
+                    "final_record_count": int(diagnostics.get("final_record_count", len(scrape_result.records)) or 0),
+                    "engagement_available": bool(diagnostics.get("engagement_available", False)),
+                },
             ),
         )
         entries = _load_manifest_entries(run_dir)
@@ -1460,6 +1799,9 @@ def _collect_pinclicks_data_sync(
             run_dir=pinclicks_analysis_dir,
             top_n=opts.winners_count,
             trend_rank_map=trend_rank_map,
+            reach_hat_map=reach_hat_map,
+            reach_confidence_map=reach_confidence_map,
+            min_click_score=opts.min_click_score,
         )
     except PinClicksAnalysisError:
         winners = []
@@ -1467,6 +1809,7 @@ def _collect_pinclicks_data_sync(
     normalized_winners: list[dict[str, Any]] = []
     for winner in winners:
         winner_payload = winner.to_dict()
+        winner_payload["scrape_source"] = PINCLICKS_SCRAPE_SOURCE_BRAVE
         normalized_winners.append(_safe_winner_dict(winner_payload))
         _append_manifest(
             run_dir,
@@ -1482,12 +1825,14 @@ def _collect_pinclicks_data_sync(
             ),
         )
 
-    return PinClicksResults(
+    result = PinClicksResults(
         run_id=run_id,
         run_dir=str(run_dir),
         winners=normalized_winners,
         skipped=skipped,
     )
+    _write_summary(run_dir, blog_suffix=suffix)
+    return result
 
 
 async def collect_pinclicks_data(
@@ -1508,6 +1853,20 @@ def collect_pinclicks_data_sync(
     return _collect_pinclicks_data_sync(opts=opts, selected_keywords=selected_keywords, run_id=run_id)
 
 
+def bootstrap_pinclicks_session_sync(
+    *,
+    headed: bool = True,
+    allow_manual_setup: bool = True,
+    setup_timeout_seconds: int = 600,
+) -> dict[str, Any]:
+    """Sync wrapper for Stage 3 Brave session bootstrap/setup."""
+    return _bootstrap_pinclicks_session_bridge(
+        headed=headed,
+        allow_manual_setup=allow_manual_setup,
+        setup_timeout_seconds=setup_timeout_seconds,
+    )
+
+
 def _run_winner_generation_sync(
     opts: EngineRunOptions,
     winners: list[dict[str, Any]],
@@ -1517,6 +1876,7 @@ def _run_winner_generation_sync(
     """Phase 3 sync implementation: generate, publish, and append CSV for winners."""
     run_dir = _resolve_phase_run_dir(run_id)
     suffix = opts.blog_suffix.strip().upper()
+    _write_run_options(run_dir, opts)
     validate_board_mapping_for_blog(suffix)
     blog_name = _resolve_blog_name_from_suffix(suffix)
     normalized_results: list[dict[str, Any]] = []
@@ -1558,31 +1918,34 @@ def _run_winner_generation_sync(
             continue
 
         cached_path = run_dir / "pinclicks_exports" / _seed_slug(keyword) / "seed_scrape_result.json"
-        if not cached_path.exists():
-            result = {
-                "keyword": keyword,
-                "status": "failed_pre_publish",
-                "error": "Missing cached PinClicks scrape result for winner.",
-                "failure_stage": "pinclicks_cache_missing",
-            }
-            normalized_results.append(result)
-            if on_progress:
-                on_progress(index, total_count, result)
-            continue
-
-        try:
-            scrape_result = _load_seed_scrape_result(cached_path)
-        except Exception as exc:
-            result = {
-                "keyword": keyword,
-                "status": "failed_pre_publish",
-                "error": str(exc),
-                "failure_stage": "pinclicks_cache_parse",
-            }
-            normalized_results.append(result)
-            if on_progress:
-                on_progress(index, total_count, result)
-            continue
+        if cached_path.exists():
+            try:
+                scrape_result = _load_seed_scrape_result(cached_path)
+            except Exception as exc:
+                result = {
+                    "keyword": keyword,
+                    "status": "failed_pre_publish",
+                    "error": str(exc),
+                    "failure_stage": "pinclicks_cache_parse",
+                }
+                normalized_results.append(result)
+                if on_progress:
+                    on_progress(index, total_count, result)
+                continue
+        else:
+            scrape_source = str(winner.get("scrape_source", "")).strip().lower()
+            if scrape_source in {"cloudflare_crawl", PINCLICKS_SCRAPE_SOURCE_BRAVE}:
+                result = {
+                    "keyword": keyword,
+                    "status": "failed_pre_publish",
+                    "error": "Missing cached Stage 3 scrape result for Brave-backed winner.",
+                    "failure_stage": "pinclicks_cache_missing",
+                }
+                normalized_results.append(result)
+                if on_progress:
+                    on_progress(index, total_count, result)
+                continue
+            scrape_result = _synthesize_scrape_result(keyword, suffix)
 
         if repair_system_prompt is None:
             repair_system_prompt = load_repair_system_prompt()
@@ -1597,6 +1960,8 @@ def _run_winner_generation_sync(
             pinclicks_rank=int(winner.get("pinclicks_rank", 0) or 0),
             repair_system_prompt=repair_system_prompt,
             publish_status=opts.publish_status,
+            csv_first_publish_at=opts.csv_first_publish_at,
+            csv_cadence_minutes=opts.csv_cadence_minutes,
         )
         result_status = str(result.get("status", "")).strip()
         failure_stage = str(result.get("failure_stage", "")).strip()
@@ -1621,7 +1986,7 @@ def _run_winner_generation_sync(
 
     completed, partial, failed_pre_publish, failed = _split_generation_results(normalized_results)
 
-    return GenerationResults(
+    result = GenerationResults(
         run_id=run_id,
         run_dir=str(run_dir),
         completed=completed,
@@ -1631,6 +1996,8 @@ def _run_winner_generation_sync(
         manifest_path=str(_manifest_path(run_dir)),
         csv_path=str(_run_csv_path(run_dir, suffix)),
     )
+    _write_summary(run_dir, blog_suffix=suffix)
+    return result
 
 
 async def run_winner_generation(
@@ -1690,12 +2057,7 @@ def run_engine(*, blog_suffix: str, resume: str | None, max_seeds: int | None, h
     )
 
     run_dir = Path(trends_result.run_dir)
-    summary = _build_summary(run_dir, blog_suffix=opts.blog_suffix)
-    (run_dir / SUMMARY_NAME).write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    return summary
+    return _write_summary(run_dir, blog_suffix=opts.blog_suffix)
 
 
 def _build_parser() -> argparse.ArgumentParser:

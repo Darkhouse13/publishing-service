@@ -5,17 +5,27 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
 from automating_wf.engine.config import EngineRunOptions, GenerationResults, PinClicksResults, TrendCandidates
-from automating_wf.export.pinterest_csv import validate_board_mapping_for_blog
+from automating_wf.export.pinterest_csv import (
+    csv_timezone,
+    csv_timezone_name,
+    default_auto_publish_datetime,
+    parse_csv_publish_date,
+    preview_publish_schedule,
+    validate_board_mapping_for_blog,
+)
 from automating_wf.engine.pipeline import (
     MANIFEST_NAME,
     RUN_ROOT,
+    RUN_OPTIONS_NAME,
     SUMMARY_NAME,
     TERMINAL_WINNER_STATUSES,
     TRENDS_TOP_KEYWORDS_FILE,
+    bootstrap_pinclicks_session_sync,
     build_generation_result_from_manifest_entry,
     collect_pinclicks_data_sync,
     collect_trends_candidates_sync,
@@ -28,11 +38,16 @@ STAGE_CONFIG = 1
 STAGE_TRENDS = 2
 STAGE_PINCLICKS = 3
 STAGE_GENERATION = 4
+PINCLICKS_SETUP_REASON = "authentication_setup_required"
+SEED_PRESETS_PATH = Path("artifacts") / "config" / "bulk_seed_presets.json"
 
 
-def _parse_seed_text(value: str) -> list[str]:
-    """Parse multiline/comma-separated seed text into ordered deduplicated keywords."""
-    parts = [item for line in str(value or "").splitlines() for item in line.split(",")]
+def _parse_seed_text(value: Any) -> list[str]:
+    """Parse multiline/comma-separated or list seed input into ordered deduplicated keywords."""
+    if isinstance(value, list):
+        parts = [str(item or "") for item in value]
+    else:
+        parts = [item for line in str(value or "").splitlines() for item in line.split(",")]
     cleaned: list[str] = []
     seen: set[str] = set()
     for part in parts:
@@ -51,6 +66,19 @@ def _safe_slug(value: str) -> str:
     """Create a safe key fragment for widget/session identifiers."""
     normalized = re.sub(r"[^A-Za-z0-9]+", "_", str(value or "").strip()).strip("_")
     return normalized or "item"
+
+
+def _pinclicks_setup_skip(results: PinClicksResults | None) -> dict[str, Any] | None:
+    """Return the preflight setup-required entry when Stage 3 needs manual login."""
+    if results is None:
+        return None
+    for item in results.skipped:
+        if str(item.get("keyword", "")).strip() != "__preflight__":
+            continue
+        if str(item.get("reason", "")).strip() != PINCLICKS_SETUP_REASON:
+            continue
+        return item
+    return None
 
 
 def _default_region() -> str:
@@ -114,8 +142,59 @@ def _default_publish_status() -> str:
     return "draft"
 
 
+def _default_csv_cadence_minutes() -> int:
+    """Resolve default CSV cadence using the same config source as the engine."""
+    raw = os.getenv("PINTEREST_CSV_CADENCE_MINUTES", "").strip() or "240"
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 240
+    return max(1, parsed)
+
+
+def _default_csv_anchor() -> datetime:
+    """Return the default suggested first CSV publish datetime."""
+    return default_auto_publish_datetime()
+
+
+def _compose_csv_first_publish_at(st: Any) -> str | None:
+    """Compose the configured first CSV publish datetime from session state."""
+    if bool(st.session_state.get("bulk_csv_auto_schedule", True)):
+        return None
+    date_value = st.session_state.get("bulk_csv_first_publish_date")
+    time_value = st.session_state.get("bulk_csv_first_publish_time")
+    if date_value is None or time_value is None:
+        return None
+    return f"{date_value.isoformat()} {time_value.strftime('%H:%M')}"
+
+
+def _schedule_preview_rows(st: Any) -> list[dict[str, str]]:
+    """Build preview rows for the Stage 1 CSV schedule UI."""
+    target_count = max(1, min(int(st.session_state.get("bulk_target_articles", 1) or 1), 5))
+    cadence_minutes = max(1, int(st.session_state.get("bulk_csv_cadence_minutes", _default_csv_cadence_minutes()) or 1))
+    return preview_publish_schedule(
+        first_publish_at=_compose_csv_first_publish_at(st),
+        cadence_minutes=cadence_minutes,
+        count=target_count,
+    )
+
+
+def _apply_opts_to_schedule_state(st: Any, opts: EngineRunOptions) -> None:
+    """Hydrate Stage 1 scheduling widgets from EngineRunOptions."""
+    st.session_state.bulk_csv_cadence_minutes = int(opts.csv_cadence_minutes)
+    parsed = parse_csv_publish_date(str(opts.csv_first_publish_at or ""))
+    if parsed is None:
+        parsed = _default_csv_anchor()
+        st.session_state.bulk_csv_auto_schedule = True
+    else:
+        st.session_state.bulk_csv_auto_schedule = False
+    st.session_state.bulk_csv_first_publish_date = parsed.date()
+    st.session_state.bulk_csv_first_publish_time = parsed.timetz().replace(tzinfo=None, second=0, microsecond=0)
+
+
 def _init_bulk_state(st: Any) -> None:
     """Initialize all namespaced bulk session-state keys."""
+    default_anchor = _default_csv_anchor()
     defaults: dict[str, Any] = {
         "bulk_stage": STAGE_CONFIG,
         "bulk_opts": None,
@@ -132,12 +211,17 @@ def _init_bulk_state(st: Any) -> None:
         "bulk_blog": "",
         "bulk_blog_config": {},
         "bulk_seed_text": "",
+        "bulk_seed_notice": "",
         "bulk_trends_region": _default_region(),
         "bulk_trends_range": _default_range(),
         "bulk_trends_top_n": _default_top_n(),
         "bulk_pinclicks_max_records": 25,
         "bulk_target_articles": _default_winner_count(),
         "bulk_publish_status": _default_publish_status(),
+        "bulk_csv_auto_schedule": True,
+        "bulk_csv_cadence_minutes": _default_csv_cadence_minutes(),
+        "bulk_csv_first_publish_date": default_anchor.date(),
+        "bulk_csv_first_publish_time": default_anchor.timetz().replace(tzinfo=None, second=0, microsecond=0),
         "bulk_headed": False,
         "bulk_resume_run_id": "",
     }
@@ -213,6 +297,73 @@ def _read_json_file(path: Path) -> Any:
         return None
 
 
+def _seed_presets_path() -> Path:
+    """Return the persistent path for saved bulk seed presets."""
+    return SEED_PRESETS_PATH
+
+
+def _load_seed_presets() -> dict[str, list[str]]:
+    """Read saved seed presets from disk."""
+    payload = _read_json_file(_seed_presets_path())
+    if not isinstance(payload, dict):
+        return {}
+    normalized: dict[str, list[str]] = {}
+    for suffix, seeds in payload.items():
+        if not isinstance(suffix, str):
+            continue
+        normalized_suffix = suffix.strip().upper()
+        if not normalized_suffix:
+            continue
+        normalized[normalized_suffix] = _parse_seed_text(seeds)
+    return normalized
+
+
+def _save_seed_preset(blog_suffix: str, seed_keywords: list[str]) -> None:
+    """Persist seed presets for one blog suffix."""
+    suffix = str(blog_suffix or "").strip().upper()
+    if not suffix:
+        return
+    presets = _load_seed_presets()
+    presets[suffix] = _parse_seed_text(seed_keywords)
+    path = _seed_presets_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(presets, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _saved_seed_keywords(blog_suffix: str) -> list[str]:
+    """Return saved seed keywords for a blog suffix, if any."""
+    suffix = str(blog_suffix or "").strip().upper()
+    if not suffix:
+        return []
+    return list(_load_seed_presets().get(suffix, []))
+
+
+def _latest_run_seed_keywords(blog_suffix: str) -> list[str]:
+    """Load seed keywords from the most recent run for the given blog suffix."""
+    suffix = str(blog_suffix or "").strip().upper()
+    if not suffix or not RUN_ROOT.exists():
+        return []
+    candidate_dirs = sorted((path for path in RUN_ROOT.iterdir() if path.is_dir()), reverse=True)
+    for run_dir in candidate_dirs:
+        payload = _read_json_file(run_dir / RUN_OPTIONS_NAME)
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("blog_suffix", "")).strip().upper() != suffix:
+            continue
+        keywords = _parse_seed_text(payload.get("seed_keywords", []))
+        if keywords:
+            return keywords
+    return []
+
+
+def _preferred_seed_keywords(blog_suffix: str) -> list[str]:
+    """Choose the best default seed list for a blog suffix."""
+    saved = _saved_seed_keywords(blog_suffix)
+    if saved:
+        return saved
+    return EngineRunOptions.from_env(blog_suffix).seed_keywords
+
+
 def _find_cached_winners_file(run_dir: Path) -> Path | None:
     """Return cached run_winners_top*.json file if present."""
     analysis_dir = run_dir / "pinclicks_analysis"
@@ -256,10 +407,12 @@ def _load_trend_candidates_from_run(run_id: str, run_dir: Path) -> TrendCandidat
             {
                 "keyword": keyword,
                 "rank": int(item.get("rank", 0) or 0),
-                "score": float(item.get("hybrid_score", 0.0) or 0.0),
-                "trend_direction": float(item.get("growth_norm", 0.0) or 0.0),
-                "volume_indicator": float(item.get("trend_index_norm", 0.0) or 0.0),
+                "reach_hat": float(item.get("reach_hat", 0.0) or 0.0),
+                "reach_confidence": float(item.get("reach_confidence", 0.0) or 0.0),
+                "trend_index_raw": float(item.get("trend_index_raw", 0.0) or 0.0),
+                "growth_rate_raw": float(item.get("growth_rate_raw", 0.0) or 0.0),
                 "source_count": int(item.get("source_count", 0) or 0),
+                "qualified": bool(item.get("qualified", True)),
             }
         )
 
@@ -284,13 +437,16 @@ def _load_pinclicks_results_from_run(run_id: str, run_dir: Path) -> PinClicksRes
                 winners.append(
                     {
                         "keyword": str(item.get("keyword", "")).strip(),
-                        "total_score": float(item.get("total_score", 0.0) or 0.0),
-                        "frequency_score": float(item.get("frequency_score", 0.0) or 0.0),
+                        "reach_hat": float(item.get("reach_hat", 0.0) or 0.0),
+                        "ctr_hat": float(item.get("ctr_hat", 0.0) or 0.0),
+                        "click_score": float(item.get("click_score", 0.0) or 0.0),
+                        "is_pareto_efficient": bool(item.get("is_pareto_efficient", False)),
+                        "selection_reason": str(item.get("selection_reason", "")).strip(),
                         "engagement_score": float(item.get("engagement_score", 0.0) or 0.0),
-                        "intent_score": float(item.get("intent_score", 0.0) or 0.0),
                         "record_count": int(item.get("record_count", 0) or 0),
                         "trend_rank": int(item.get("trend_rank", 0) or 0),
                         "pinclicks_rank": int(item.get("pinclicks_rank", 0) or 0),
+                        "scrape_source": str(item.get("scrape_source", "")).strip(),
                     }
                 )
 
@@ -382,6 +538,17 @@ def _apply_resume_state(st: Any, run_id: str) -> bool:
     trend_candidates = _load_trend_candidates_from_run(run_id, run_dir)
     pinclicks_results = _load_pinclicks_results_from_run(run_id, run_dir)
     generation_results = _load_generation_results_from_run(run_id, run_dir)
+    run_options_payload = _read_json_file(run_dir / RUN_OPTIONS_NAME)
+    if isinstance(run_options_payload, dict):
+        try:
+            resumed_opts = EngineRunOptions.from_ui(run_options_payload)
+            st.session_state.bulk_opts = resumed_opts
+            st.session_state.bulk_seed_text = "\n".join(resumed_opts.seed_keywords)
+            _apply_opts_to_schedule_state(st, resumed_opts)
+            st.session_state.bulk_publish_status = resumed_opts.publish_status
+            st.session_state.bulk_headed = resumed_opts.headed
+        except Exception:
+            pass
 
     st.session_state.bulk_run_id = run_id
     st.session_state.bulk_stage = stage
@@ -434,7 +601,9 @@ def _render_stage_config(
         if selected_blog:
             suffix = resolve_target_suffix(selected_blog)
             defaults = EngineRunOptions.from_env(suffix)
-            st.session_state.bulk_seed_text = "\n".join(defaults.seed_keywords)
+            st.session_state.bulk_seed_text = "\n".join(_preferred_seed_keywords(suffix))
+            _apply_opts_to_schedule_state(st, defaults)
+            st.session_state.bulk_seed_notice = ""
         _clear_bulk_from_stage(st, STAGE_TRENDS)
         st.rerun()
 
@@ -445,6 +614,39 @@ def _render_stage_config(
             st.caption(f"Target: {target_url}")
         else:
             st.warning(f"Missing destination URL for `{suffix}`. Set `WP_URL_{suffix}` in `.env`.")
+
+        action_col1, action_col2, action_col3 = st.columns(3)
+        with action_col1:
+            if st.button("Load Saved Seeds", key="bulk_load_saved_seeds"):
+                saved_keywords = _saved_seed_keywords(suffix)
+                if saved_keywords:
+                    st.session_state.bulk_seed_text = "\n".join(saved_keywords)
+                    st.session_state.bulk_seed_notice = f"Loaded saved seeds for `{suffix}`."
+                else:
+                    st.session_state.bulk_seed_notice = f"No saved seeds found for `{suffix}`."
+                st.rerun()
+        with action_col2:
+            if st.button("Load Last Run Seeds", key="bulk_load_last_run_seeds"):
+                latest_keywords = _latest_run_seed_keywords(suffix)
+                if latest_keywords:
+                    st.session_state.bulk_seed_text = "\n".join(latest_keywords)
+                    st.session_state.bulk_seed_notice = f"Loaded seed keywords from the latest `{suffix}` run."
+                else:
+                    st.session_state.bulk_seed_notice = f"No prior run seeds found for `{suffix}`."
+                st.rerun()
+        with action_col3:
+            if st.button("Save Current Seeds", key="bulk_save_current_seeds"):
+                current_keywords = _parse_seed_text(st.session_state.bulk_seed_text)
+                if current_keywords:
+                    _save_seed_preset(suffix, current_keywords)
+                    st.session_state.bulk_seed_notice = f"Saved {len(current_keywords)} seed keywords for `{suffix}`."
+                else:
+                    st.session_state.bulk_seed_notice = "Cannot save an empty seed list."
+                st.rerun()
+
+    seed_notice = str(st.session_state.get("bulk_seed_notice", "")).strip()
+    if seed_notice:
+        st.info(seed_notice)
 
     seeds_value = st.text_area(
         "Seed Keywords",
@@ -497,6 +699,46 @@ def _render_stage_config(
     with col7:
         st.checkbox("Headed Browser", key="bulk_headed")
 
+    st.markdown("**CSV Schedule**")
+    st.caption(f"Publish dates use timezone: `{csv_timezone_name()}`")
+    col8, col9 = st.columns(2)
+    with col8:
+        st.checkbox(
+            "Clear publish datetime and auto-schedule",
+            key="bulk_csv_auto_schedule",
+            help="When enabled, the first CSV row uses the next available slot automatically.",
+        )
+    with col9:
+        st.number_input(
+            "Cadence Minutes",
+            min_value=1,
+            max_value=1440,
+            key="bulk_csv_cadence_minutes",
+            step=15,
+        )
+
+    if not st.session_state.bulk_csv_auto_schedule:
+        col10, col11 = st.columns(2)
+        with col10:
+            st.date_input(
+                "First CSV Publish Date",
+                key="bulk_csv_first_publish_date",
+            )
+        with col11:
+            st.time_input(
+                "First CSV Publish Time",
+                key="bulk_csv_first_publish_time",
+                step=900,
+            )
+    else:
+        next_slot = _default_csv_anchor().strftime("%Y-%m-%d %H:%M")
+        st.caption(f"Auto-schedule will start from the next rounded slot: `{next_slot}`")
+
+    preview_rows = _schedule_preview_rows(st)
+    if preview_rows:
+        st.caption("Schedule preview")
+        st.dataframe(preview_rows, width="stretch", hide_index=True)
+
     st.text_input(
         "Resume Previous Run (optional run_id)",
         key="bulk_resume_run_id",
@@ -519,6 +761,18 @@ def _render_stage_config(
             st.error(st.session_state.bulk_last_error)
             return
 
+        csv_first_publish_at = _compose_csv_first_publish_at(st)
+        if csv_first_publish_at:
+            parsed_first_publish_at = parse_csv_publish_date(csv_first_publish_at)
+            if parsed_first_publish_at is None:
+                st.session_state.bulk_last_error = "First CSV publish datetime is invalid."
+                st.error(st.session_state.bulk_last_error)
+                return
+            if parsed_first_publish_at <= datetime.now(csv_timezone()):
+                st.session_state.bulk_last_error = "First CSV publish datetime must be in the future."
+                st.error(st.session_state.bulk_last_error)
+                return
+
         suffix = resolve_target_suffix(selected_blog)
         try:
             validate_board_mapping_for_blog(suffix)
@@ -538,6 +792,8 @@ def _render_stage_config(
                     "pinclicks_max_records": int(st.session_state.bulk_pinclicks_max_records),
                     "winners_count": int(st.session_state.bulk_target_articles),
                     "publish_status": st.session_state.bulk_publish_status,
+                    "csv_first_publish_at": csv_first_publish_at,
+                    "csv_cadence_minutes": int(st.session_state.bulk_csv_cadence_minutes),
                     "headed": bool(st.session_state.bulk_headed),
                     "resume_run_id": str(st.session_state.bulk_resume_run_id).strip() or None,
                 }
@@ -610,8 +866,12 @@ def _render_stage_trends(st: Any) -> None:
         if not keyword:
             continue
         checkbox_key = f"bulk_kw_{index}_{_safe_slug(keyword)}"
+        reach = item.get("reach_hat", 0.0)
+        conf = item.get("reach_confidence", 0.0)
+        rank = item.get("rank", 0)
+        src = item.get("source_count", 0)
         checked = st.checkbox(
-            f"{keyword} | score {item.get('score', 0.0):.3f} | rank {item.get('rank', 0)}",
+            f"{keyword} | reach {reach:.3f} | conf {conf:.2f} | sources {src} | rank {rank}",
             key=checkbox_key,
             value=st.session_state.get(checkbox_key, True),
         )
@@ -620,16 +880,50 @@ def _render_stage_trends(st: Any) -> None:
 
     st.caption(f"Selected {len(selected_keywords)} of {len(trend_candidates.ranked_keywords)} keywords")
     proceed_disabled = len(selected_keywords) == 0
-    if st.button("Proceed to PinClicks Analysis", disabled=proceed_disabled, key="bulk_to_stage3"):
-        st.session_state.bulk_selected_keywords = selected_keywords
-        st.session_state.bulk_stage = STAGE_PINCLICKS
-        _clear_bulk_from_stage(st, STAGE_PINCLICKS)
-        st.rerun()
+    col_pinclicks, col_skip = st.columns(2)
+    with col_pinclicks:
+        if st.button("Proceed to PinClicks Analysis", disabled=proceed_disabled, key="bulk_to_stage3"):
+            st.session_state.bulk_selected_keywords = selected_keywords
+            st.session_state.bulk_stage = STAGE_PINCLICKS
+            _clear_bulk_from_stage(st, STAGE_PINCLICKS)
+            st.rerun()
+    with col_skip:
+        if st.button("Skip to Generation (no PinClicks)", disabled=proceed_disabled, key="bulk_skip_to_stage4"):
+            st.session_state.bulk_selected_keywords = selected_keywords
+            trend_data = {
+                str(it.get("keyword", "")).strip(): it
+                for it in trend_candidates.ranked_keywords
+            }
+            winners = []
+            for idx, kw in enumerate(selected_keywords):
+                td = trend_data.get(kw, {})
+                rh = float(td.get("reach_hat", 0.5) or 0.5)
+                default_ctr = 0.5
+                winners.append(
+                    {
+                        "keyword": kw,
+                        "reach_hat": rh,
+                        "ctr_hat": default_ctr,
+                        "click_score": round(rh * default_ctr, 6),
+                        "is_pareto_efficient": True,
+                        "selection_reason": "synthetic_skip",
+                        "trend_rank": idx + 1,
+                        "pinclicks_rank": 0,
+                        "scrape_source": "synthetic",
+                    }
+                )
+            st.session_state.bulk_final_winners = winners
+            st.session_state.bulk_generation_results = None
+            st.session_state.bulk_generation_started = False
+            st.session_state.bulk_generation_progress = []
+            st.session_state.bulk_last_error = None
+            st.session_state.bulk_stage = STAGE_GENERATION
+            st.rerun()
 
 
 def _render_stage_pinclicks(st: Any) -> None:
     """Render Stage 3 PinClicks analysis and winner review UI."""
-    st.subheader("Stage 3: PinClicks Analysis")
+    st.subheader("Stage 3: PinClicks Analysis (Brave Session)")
     if st.button("<- Back", key="bulk_back_stage3"):
         _go_back_to(st, STAGE_TRENDS)
 
@@ -641,7 +935,10 @@ def _render_stage_pinclicks(st: Any) -> None:
         return
 
     if st.session_state.bulk_pinclicks_results is None and not st.session_state.bulk_last_error:
-        with st.status(f"Analyzing PinClicks for {len(selected_keywords)} keywords...", expanded=True):
+        with st.status(
+            f"Checking PinClicks Brave session and scraping {len(selected_keywords)} keywords...",
+            expanded=True,
+        ):
             try:
                 results = collect_pinclicks_data_sync(
                     opts=opts,
@@ -666,6 +963,79 @@ def _render_stage_pinclicks(st: Any) -> None:
     results: PinClicksResults | None = st.session_state.bulk_pinclicks_results
     if results is None:
         st.warning("No PinClicks results found.")
+        return
+
+    setup_skip = _pinclicks_setup_skip(results)
+    if setup_skip is not None:
+        is_expired = bool(setup_skip.get("session_expired", False))
+        if is_expired:
+            expired_cookies = setup_skip.get("expired_cookies", [])
+            expired_at = setup_skip.get("expired_at", {})
+            cookie_list = (
+                ", ".join(f"**{c}**" for c in sorted(expired_cookies))
+                if expired_cookies
+                else "session cookies"
+            )
+            date_parts = sorted(expired_at.values()) if expired_at else []
+            date_info = f" (expired {date_parts[0]})" if date_parts else ""
+            st.warning(
+                f"PinClicks session has expired{date_info}. "
+                f"Affected cookies: {cookie_list}. "
+                "Re-login is required to continue Stage 3 scraping."
+            )
+            st.markdown(
+                "\n".join(
+                    [
+                        "**Re-login instructions**",
+                        "1. Close other Brave windows for a clean session.",
+                        "2. Click `Re-authenticate PinClicks Session` below.",
+                        "3. Log into PinClicks in the opened PinFlow Brave window.",
+                        "4. Wait for confirmation, then retry Stage 3.",
+                    ]
+                )
+            )
+        else:
+            st.info(
+                "Stage 3 needs a one-time PinClicks login in the dedicated PinFlow Brave profile "
+                "before scraping can continue."
+            )
+            st.markdown(
+                "\n".join(
+                    [
+                        "**Setup instructions**",
+                        "1. Close other Brave windows for the first setup run.",
+                        "2. Click `Set up PinClicks Session` below.",
+                        "3. Log into PinClicks in the opened PinFlow Brave window.",
+                        "4. Wait for this page to confirm that the session is ready, then retry Stage 3.",
+                    ]
+                )
+            )
+        setup_error = str(setup_skip.get("error", "")).strip()
+        if setup_error and not is_expired:
+            st.warning(setup_error)
+        button_label = "Re-authenticate PinClicks Session" if is_expired else "Set up PinClicks Session"
+        if st.button(button_label, type="primary", key="bulk_stage3_setup"):
+            with st.status("Opening PinFlow Brave profile for PinClicks setup...", expanded=True):
+                try:
+                    payload = bootstrap_pinclicks_session_sync(
+                        headed=True,
+                        allow_manual_setup=True,
+                        setup_timeout_seconds=900,
+                    )
+                    if bool(payload.get("authenticated", False)):
+                        st.session_state.bulk_pinclicks_results = None
+                        st.session_state.bulk_last_error = None
+                        st.success(str(payload.get("message", "PinClicks session is ready.")))
+                        st.rerun()
+                    st.session_state.bulk_last_error = str(payload.get("message", "")).strip() or (
+                        "PinClicks session setup did not complete."
+                    )
+                except Exception as exc:
+                    st.session_state.bulk_last_error = str(exc) or f"{type(exc).__name__}: {exc!r}"
+        if st.button("Retry Stage 3", key="bulk_retry_stage3_setup"):
+            st.session_state.bulk_pinclicks_results = None
+            st.session_state.bulk_last_error = None
+            st.rerun()
         return
 
     if results.winners:
@@ -802,6 +1172,21 @@ def _render_stage_generation(st: Any) -> None:
                 st.json(item)
 
     csv_path = Path(str(results.csv_path or "").strip()) if str(results.csv_path or "").strip() else None
+    summary_payload = _read_json_file(RUN_ROOT / run_id / SUMMARY_NAME)
+    if isinstance(summary_payload, dict):
+        csv_schedule = summary_payload.get("csv_schedule", {})
+        if isinstance(csv_schedule, dict):
+            first_publish_at = str(csv_schedule.get("first_publish_at", "")).strip() or "auto"
+            cadence_minutes = int(csv_schedule.get("cadence_minutes", 0) or 0)
+            timezone_name = str(csv_schedule.get("timezone", "")).strip()
+            if cadence_minutes > 0:
+                st.caption(
+                    "CSV schedule: "
+                    f"first slot `{first_publish_at}`, cadence `{cadence_minutes}` minutes, timezone `{timezone_name}`"
+                )
+            preview_slots = csv_schedule.get("preview_slots", [])
+            if isinstance(preview_slots, list) and preview_slots:
+                st.dataframe(preview_slots, width="stretch", hide_index=True)
     if csv_path is not None:
         st.caption(f"Expected Pinterest CSV path: `{csv_path}`")
     if csv_path is not None and csv_path.exists():

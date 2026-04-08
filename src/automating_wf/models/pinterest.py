@@ -29,14 +29,19 @@ class SeedScrapeResult:
     records: list[PinRecord]
     scraped_at: str
     source_file: str = ""
+    scrape_mode: str = ""
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        scrape_mode = self.scrape_mode.strip() or ("export" if self.source_file else "visible_rows")
         return {
             "blog_suffix": self.blog_suffix,
             "seed_keyword": self.seed_keyword,
             "source_url": self.source_url,
             "scraped_at": self.scraped_at,
             "source_file": self.source_file,
+            "scrape_mode": scrape_mode,
+            "diagnostics": dict(self.diagnostics),
             "records": [record.to_dict() for record in self.records],
         }
 
@@ -51,6 +56,7 @@ class TrendExportRecord:
     region: str
     time_range: str
     source_file: str
+    include_keyword_applied: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -59,11 +65,16 @@ class TrendExportRecord:
 @dataclass(slots=True)
 class TrendKeywordCandidate:
     keyword: str
-    hybrid_score: float
-    trend_index_norm: float
-    growth_norm: float
-    consistency_norm: float
+    reach_hat: float
+    reach_confidence: float
+    trend_index_raw: float
+    growth_rate_raw: float
+    consistency_raw: float
     source_count: int
+    qualified: bool
+    include_keyword_ratio: float = 1.0
+    disqualification_reason: str = ""
+    suppressed_by: str = ""
     rank: int = 0
 
     def to_dict(self) -> dict[str, Any]:
@@ -88,14 +99,29 @@ class PinClicksExportRecord:
 
 @dataclass(slots=True)
 class PinClicksKeywordScore:
+    """Scored candidate after PinClicks analysis.
+
+    ``click_score`` is a relative proxy for expected outbound clicks,
+    computed as ``reach_hat * ctr_hat``.  It is NOT a literal predicted
+    click count — it is a unitless ranking score in [0, 1] used to
+    compare candidates within the same run.
+    """
+
     keyword: str
-    total_score: float
-    frequency_score: float
+    ctr_hat: float
+    ctr_confidence: float
+    reach_hat: float
+    click_score: float
+    is_pareto_efficient: bool
+    outbound_intent_score: float
     engagement_score: float
-    intent_score: float
+    frequency_score: float
     record_count: int
+    engagement_available: bool = True
     trend_rank: int = 0
     pinclicks_rank: int = 0
+    selection_reason: str = ""
+    suppressed_by: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

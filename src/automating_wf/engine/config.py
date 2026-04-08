@@ -13,10 +13,12 @@ from dotenv import load_dotenv
 PINCLICKS_SKIP_REASON_SEARCH_INPUT_NOT_FOUND = "search_input_not_found"
 PINCLICKS_SKIP_REASON_SEARCH_INPUT_REJECTED = "search_input_rejected"
 PINCLICKS_SKIP_REASON_DIRECT_TOP_PINS_NAVIGATION_FAILED = "direct_top_pins_navigation_failed"
+PINCLICKS_SKIP_REASON_INVALID_RESULTS_PAGE = "invalid_results_page"
 PINCLICKS_SKIP_REASON_EXPORT_DOWNLOAD_FAILED = "export_download_failed"
 PINCLICKS_SKIP_REASON_NO_RECORDS_EXTRACTED = "no_records_extracted"
 PINCLICKS_SKIP_REASON_CAPTCHA_CHECKPOINT_REQUIRED = "captcha_checkpoint_required"
 PINCLICKS_SKIP_REASON_AUTHENTICATION_FAILED = "authentication_failed"
+PINCLICKS_SKIP_REASON_AUTHENTICATION_SETUP_REQUIRED = "authentication_setup_required"
 PINCLICKS_SKIP_REASON_UNKNOWN = "unknown_scrape_failure"
 
 
@@ -41,6 +43,12 @@ def _read_bool(value: Any, default: bool = False) -> bool:
     if text in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def _read_optional_text(value: Any) -> str | None:
+    """Normalize optional text inputs to stripped strings or None."""
+    text = str(value or "").strip()
+    return text or None
 
 
 def _parse_keywords(value: Any) -> list[str]:
@@ -108,10 +116,20 @@ class EngineRunOptions:
     winners_count: int
     # WordPress publish status passed to uploader; defaults from WP_POST_STATUS then "draft".
     publish_status: str
+    # Optional first CSV publish datetime for the first appended row in this run.
+    csv_first_publish_at: str | None
+    # Minutes between scheduled CSV rows; defaults from PINTEREST_CSV_CADENCE_MINUTES.
+    csv_cadence_minutes: int
     # Whether scraping runs in headed browser mode; defaults False.
     headed: bool
     # Optional run id/path to resume from existing artifacts; defaults None.
     resume_run_id: str | None
+    # Minimum reach_hat for a trend keyword to qualify (Stage 1 gate).
+    min_reach_hat: float = 0.05
+    # Minimum cross-seed source_count for a trend keyword to qualify.
+    min_source_count: int = 1
+    # Minimum click_score (reach_hat * ctr_hat) for a keyword to qualify (Stage 2 gate).
+    min_click_score: float = 0.01
 
     @classmethod
     def from_env(cls, blog_suffix: str) -> "EngineRunOptions":
@@ -140,7 +158,30 @@ class EngineRunOptions:
             5,
         )
         publish_status = os.getenv("WP_POST_STATUS", "draft").strip() or "draft"
+        csv_first_publish_at = _read_optional_text(os.getenv("PINTEREST_CSV_FIRST_PUBLISH_AT", ""))
+        csv_cadence_minutes = _read_positive_int(
+            os.getenv("PINTEREST_CSV_CADENCE_MINUTES", "").strip(),
+            240,
+        )
         seed_keywords = seed_map.get(suffix, [])
+
+        min_reach_hat_raw = os.getenv("PINTEREST_TRENDS_MIN_REACH_HAT", "").strip()
+        min_reach_hat = 0.05
+        if min_reach_hat_raw:
+            try:
+                min_reach_hat = max(0.0, float(min_reach_hat_raw))
+            except ValueError:
+                pass
+        min_source_count = _read_positive_int(
+            os.getenv("PINTEREST_TRENDS_MIN_SOURCE_COUNT", "").strip(), 1
+        )
+        min_click_score_raw = os.getenv("PINTEREST_MIN_CLICK_SCORE", "").strip()
+        min_click_score = 0.01
+        if min_click_score_raw:
+            try:
+                min_click_score = max(0.0, float(min_click_score_raw))
+            except ValueError:
+                pass
 
         return cls(
             blog_suffix=suffix,
@@ -152,8 +193,13 @@ class EngineRunOptions:
             pinclicks_max_records=25,
             winners_count=winners_count,
             publish_status=publish_status,
+            csv_first_publish_at=csv_first_publish_at,
+            csv_cadence_minutes=csv_cadence_minutes,
             headed=False,
             resume_run_id=None,
+            min_reach_hat=min_reach_hat,
+            min_source_count=min_source_count,
+            min_click_score=min_click_score,
         )
 
     @classmethod
@@ -193,12 +239,34 @@ class EngineRunOptions:
         if "publish_status" in overrides:
             publish_status = str(overrides["publish_status"] or "").strip()
             overrides["publish_status"] = publish_status or defaults.publish_status
+        if "csv_first_publish_at" in overrides:
+            overrides["csv_first_publish_at"] = _read_optional_text(overrides["csv_first_publish_at"])
+        if "csv_cadence_minutes" in overrides:
+            overrides["csv_cadence_minutes"] = _read_positive_int(
+                overrides["csv_cadence_minutes"],
+                defaults.csv_cadence_minutes,
+            )
         if "blog_suffix" in overrides:
             overrides["blog_suffix"] = str(overrides["blog_suffix"] or "").strip().upper() or defaults.blog_suffix
         if "trends_region" in overrides:
             overrides["trends_region"] = str(overrides["trends_region"] or "").strip() or defaults.trends_region
         if "trends_range" in overrides:
             overrides["trends_range"] = str(overrides["trends_range"] or "").strip() or defaults.trends_range
+
+        if "min_reach_hat" in overrides:
+            try:
+                overrides["min_reach_hat"] = max(0.0, float(overrides["min_reach_hat"]))
+            except (TypeError, ValueError):
+                overrides["min_reach_hat"] = defaults.min_reach_hat
+        if "min_source_count" in overrides:
+            overrides["min_source_count"] = _read_positive_int(
+                overrides["min_source_count"], defaults.min_source_count
+            )
+        if "min_click_score" in overrides:
+            try:
+                overrides["min_click_score"] = max(0.0, float(overrides["min_click_score"]))
+            except (TypeError, ValueError):
+                overrides["min_click_score"] = defaults.min_click_score
 
         return cls(
             blog_suffix=overrides.get("blog_suffix", defaults.blog_suffix),
@@ -216,8 +284,13 @@ class EngineRunOptions:
             ),
             winners_count=overrides.get("winners_count", defaults.winners_count),
             publish_status=overrides.get("publish_status", defaults.publish_status),
+            csv_first_publish_at=overrides.get("csv_first_publish_at", defaults.csv_first_publish_at),
+            csv_cadence_minutes=overrides.get("csv_cadence_minutes", defaults.csv_cadence_minutes),
             headed=overrides.get("headed", defaults.headed),
             resume_run_id=overrides.get("resume_run_id", defaults.resume_run_id),
+            min_reach_hat=overrides.get("min_reach_hat", defaults.min_reach_hat),
+            min_source_count=overrides.get("min_source_count", defaults.min_source_count),
+            min_click_score=overrides.get("min_click_score", defaults.min_click_score),
         )
 
 

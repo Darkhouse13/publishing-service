@@ -740,7 +740,12 @@ def _apply_include_keyword_filter(page: Any, keyword: str) -> bool:
     return _verify_keyword_filter_applied(page, include_keyword)
 
 
-def _search_keyword(page: Any, keyword: str, base_url: str, keyword_dir: Path | None = None) -> None:
+def _search_keyword(page: Any, keyword: str, base_url: str, keyword_dir: Path | None = None) -> bool:
+    """Navigate to trends search for *keyword* and apply the include-keyword filter.
+
+    Returns ``True`` if the precise include-keyword filter was applied
+    successfully, ``False`` if execution fell back to a broad global search.
+    """
     page.goto(_build_search_url(base_url, keyword), wait_until="domcontentloaded")
     _sleep_random(NAVIGATION_DELAY_RANGE)
 
@@ -750,7 +755,7 @@ def _search_keyword(page: Any, keyword: str, base_url: str, keyword_dir: Path | 
 
     for attempt in range(1, include_attempts + 1):
         if _apply_include_keyword_filter(page, keyword):
-            return
+            return True
         _dismiss_popups(page)
         if attempt < include_attempts:
             _sleep_random((0.4, 0.9))
@@ -764,7 +769,7 @@ def _search_keyword(page: Any, keyword: str, base_url: str, keyword_dir: Path | 
         )
 
     if _fallback_global_search(page, keyword):
-        return
+        return False
 
     raise TrendsScraperError(
         f"Could not apply Trends keyword search for keyword '{keyword}'."
@@ -866,9 +871,12 @@ def _build_context(
     storage_state_path: Path,
     downloads_path: Path,
 ) -> tuple[Any, Any]:
+    args = ["--disable-blink-features=AutomationControlled"]
+    if headed:
+        args += ["--window-position=-32000,-32000", "--window-size=1,1"]
     browser = playwright.chromium.launch(
         headless=not headed,
-        args=["--disable-blink-features=AutomationControlled"],
+        args=args,
     )
     context_kwargs: dict[str, Any] = {
         "viewport": dict(random.choice(DEFAULT_VIEWPORTS)),
@@ -936,7 +944,7 @@ def scrape_trends_exports(
 
                 for attempt in range(1, max_attempts + 1):
                     try:
-                        _search_keyword(page, seed_keyword, base_url, seed_dir)
+                        include_keyword_applied = _search_keyword(page, seed_keyword, base_url, seed_dir)
                         _dismiss_popups(page)
                         _set_filter_if_present(page, "Region", region)
                         _set_filter_if_present(page, "Time", time_range)
@@ -969,6 +977,7 @@ def scrape_trends_exports(
                                 "export_file": str(export_file),
                                 "row_count": len(rows),
                                 "scraped_at": _now_utc_iso(),
+                                "include_keyword_applied": include_keyword_applied,
                             },
                         )
                         last_error = None
