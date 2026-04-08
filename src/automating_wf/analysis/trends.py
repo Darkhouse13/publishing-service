@@ -13,12 +13,21 @@ from automating_wf.models.pinterest import TrendExportRecord, TrendKeywordCandid
 
 
 # Bump this when scoring logic changes to invalidate cached artifacts.
-SCORING_VERSION = "2.1.0-reach"
+SCORING_VERSION = "2.2.0-reach"
 
 # Qualification defaults — candidates below these floors are disqualified.
 DEFAULT_MIN_REACH_HAT = 0.05
 DEFAULT_MIN_SOURCE_COUNT = 1
 DEFAULT_MIN_REACH_CONFIDENCE = 0.3
+
+# Nominal reach-estimator weights.  Effective weights are dynamically
+# redistributed at run time when a feature is flat or missing.
+NOMINAL_REACH_WEIGHTS: dict[str, float] = {
+    "trend_index": 0.55,
+    "growth": 0.30,
+    "consistency": 0.05,
+    "source_count": 0.10,
+}
 
 
 TREND_INDEX_ALIASES = (
@@ -204,6 +213,72 @@ def _read_export_metadata(export_file: str) -> dict[str, Any]:
         return {}
 
 
+# ── Dynamic weight redistribution ────────────────────────────────────────
+
+
+def _is_feature_active(values: list[float]) -> tuple[bool, str]:
+    """Check if a feature has meaningful variation across candidates.
+
+    Returns ``(active, reason)`` where *reason* explains inactivity.
+    A single-candidate run always reports features as active because
+    there is nothing to redistribute.
+    """
+    if not values:
+        return False, "no_values"
+    if len(values) <= 1:
+        return True, ""  # single candidate — use nominal weights
+    if all(v == 0.0 for v in values):
+        return False, "all_zero"
+    unique = set(round(v, 8) for v in values)
+    if len(unique) <= 1:
+        return False, "constant"
+    return True, ""
+
+
+def _compute_effective_weights(
+    feature_values: dict[str, list[float]],
+) -> tuple[dict[str, float], dict[str, dict[str, Any]]]:
+    """Compute effective weights by redistributing from inactive features.
+
+    Returns (effective_weights, feature_status) where feature_status maps
+    each feature name to ``{"active": bool, "reason": str, "nominal": float,
+    "effective": float}``.
+    """
+    feature_status: dict[str, dict[str, Any]] = {}
+    active_nominal_sum = 0.0
+
+    for name, values in feature_values.items():
+        active, reason = _is_feature_active(values)
+        feature_status[name] = {
+            "active": active,
+            "reason": reason,
+            "nominal": NOMINAL_REACH_WEIGHTS.get(name, 0.0),
+        }
+        if active:
+            active_nominal_sum += NOMINAL_REACH_WEIGHTS.get(name, 0.0)
+
+    effective: dict[str, float] = {}
+
+    if active_nominal_sum <= 0:
+        # All features inactive — use equal weights as fallback
+        n = max(len(feature_values), 1)
+        for name in feature_values:
+            effective[name] = 1.0 / n
+            feature_status[name]["effective"] = round(1.0 / n, 6)
+        return effective, feature_status
+
+    for name in feature_values:
+        if not feature_status[name]["active"]:
+            effective[name] = 0.0
+        else:
+            effective[name] = NOMINAL_REACH_WEIGHTS.get(name, 0.0) / active_nominal_sum
+
+    for name in feature_values:
+        feature_status[name]["effective"] = round(effective[name], 6)
+
+    return effective, feature_status
+
+
 # ── Near-duplicate / cannibalization suppression ─────────────────────────
 
 
@@ -214,14 +289,12 @@ def _dedup_canonical_key(keyword: str) -> str:
     token-order variants.
     """
     tokens = re.findall(r"[a-z0-9]+", keyword.casefold())
-    # Strip simple plural 's' from tokens longer than 3 chars
     stemmed = []
     for t in tokens:
         if len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
             stemmed.append(t[:-1])
         else:
             stemmed.append(t)
-    # Sort to make order-invariant
     return " ".join(sorted(stemmed))
 
 
@@ -241,7 +314,6 @@ def _suppress_near_duplicates(
     for _key, indices in canonical_groups.items():
         if len(indices) <= 1:
             continue
-        # Best is whichever has highest reach_hat (already sorted descending)
         best_idx = indices[0]
         best_kw = candidates[best_idx].keyword
         for dup_idx in indices[1:]:
@@ -351,12 +423,7 @@ def _compute_reach_confidence(
     growth_rate_raw: float,
     include_keyword_ratio: float,
 ) -> float:
-    """Estimate confidence in reach_hat based on data-quality signals.
-
-    ``include_keyword_ratio`` is the fraction of export records that used
-    the precise include-keyword filter (vs. fallback global search).
-    Fallback exports are noisier, so they reduce confidence.
-    """
+    """Estimate confidence in reach_hat based on data-quality signals."""
     confidence = 0.3
     if source_count >= 2:
         confidence += 0.15
@@ -366,7 +433,6 @@ def _compute_reach_confidence(
         confidence += 0.15
     if abs(growth_rate_raw) > 0:
         confidence += 0.1
-    # Scrape quality: exports with include-keyword filter are higher quality
     confidence += 0.2 * include_keyword_ratio
     return min(1.0, round(confidence, 4))
 
@@ -385,13 +451,18 @@ def analyze_trends_exports(
     min_source_count: int = DEFAULT_MIN_SOURCE_COUNT,
     min_reach_confidence: float = DEFAULT_MIN_REACH_CONFIDENCE,
 ) -> list[TrendKeywordCandidate]:
-    """Score trend keywords by estimated reach potential and apply qualification gates.
+    """Score trend keywords by estimated reach potential.
 
-    Reach estimator weights (percentile-rank normalized):
-      - 55% trend_index  (current volume — best proxy for impressions)
-      - 30% growth_rate  (expanding reach potential)
+    Nominal reach-estimator weights:
+      - 55% trend_index  (current volume)
+      - 30% growth_rate  (expanding reach)
       - 10% source_count (cross-seed confirmation)
-      -  5% consistency  (minor; avoids penalising emerging topics)
+      -  5% consistency  (stability)
+
+    If a feature is flat or missing for the entire run (all values zero,
+    or no variation), its nominal weight is redistributed proportionally
+    across the remaining active features.  Both nominal and effective
+    weights are persisted in the run metadata.
 
     Qualification gates (applied in order):
       1. reach_hat >= min_reach_hat
@@ -404,7 +475,6 @@ def analyze_trends_exports(
 
     for seed_keyword, file_paths in export_files_by_seed.items():
         for file_path in file_paths:
-            # Read scrape-quality metadata for this export
             meta = _read_export_metadata(file_path)
             ik_applied = bool(meta.get("include_keyword_applied", True))
 
@@ -449,20 +519,42 @@ def analyze_trends_exports(
             }
         )
 
+    # --- Dynamic weight redistribution ---
+    feature_values = {
+        "trend_index": [a["trend_index"] for a in aggregates],
+        "growth": [a["growth"] for a in aggregates],
+        "consistency": [a["consistency"] for a in aggregates],
+        "source_count": [float(a["source_count"]) for a in aggregates],
+    }
+    effective_weights, feature_status = _compute_effective_weights(feature_values)
+
+    run_warnings: list[str] = []
+    for name, status in feature_status.items():
+        if not status["active"]:
+            run_warnings.append(
+                f"Stage 1 feature '{name}' is inactive ({status['reason']}); "
+                f"nominal weight {status['nominal']:.0%} redistributed to active features."
+            )
+
     # --- Percentile-rank normalize each dimension ---
-    trend_pcts = _percentile_ranks([a["trend_index"] for a in aggregates])
-    growth_pcts = _percentile_ranks([a["growth"] for a in aggregates])
-    consistency_pcts = _percentile_ranks([a["consistency"] for a in aggregates])
-    source_pcts = _percentile_ranks([float(a["source_count"]) for a in aggregates])
+    trend_pcts = _percentile_ranks(feature_values["trend_index"])
+    growth_pcts = _percentile_ranks(feature_values["growth"])
+    consistency_pcts = _percentile_ranks(feature_values["consistency"])
+    source_pcts = _percentile_ranks(feature_values["source_count"])
+
+    pct_map = {
+        "trend_index": trend_pcts,
+        "growth": growth_pcts,
+        "consistency": consistency_pcts,
+        "source_count": source_pcts,
+    }
 
     # --- Compute reach_hat and apply qualification gates ---
     candidates: list[TrendKeywordCandidate] = []
     for index, agg in enumerate(aggregates):
-        reach_hat = (
-            0.55 * trend_pcts[index]
-            + 0.30 * growth_pcts[index]
-            + 0.05 * consistency_pcts[index]
-            + 0.10 * source_pcts[index]
+        reach_hat = sum(
+            effective_weights[feat] * pct_map[feat][index]
+            for feat in effective_weights
         )
         reach_confidence = _compute_reach_confidence(
             source_count=agg["source_count"],
@@ -504,7 +596,7 @@ def analyze_trends_exports(
             )
         )
 
-    # --- Sort by reach_hat (descending) so dedup keeps the best variant ---
+    # --- Sort by reach_hat descending so dedup keeps the best variant ---
     candidates.sort(
         key=lambda c: (
             -c.reach_hat,
@@ -522,7 +614,6 @@ def analyze_trends_exports(
     for rank, candidate in enumerate(qualified_candidates, start=1):
         candidate.rank = rank
 
-    # Keep fewer than top_n when the run is weak.
     selected = qualified_candidates[: max(1, top_n)] if qualified_candidates else []
 
     # --- Persist artifacts ---
@@ -544,6 +635,10 @@ def analyze_trends_exports(
             "min_reach_hat": min_reach_hat,
             "min_source_count": min_source_count,
             "min_reach_confidence": min_reach_confidence,
+            "nominal_weights": {k: round(v, 4) for k, v in NOMINAL_REACH_WEIGHTS.items()},
+            "effective_weights": {k: round(v, 6) for k, v in effective_weights.items()},
+            "feature_status": feature_status,
+            "run_warnings": run_warnings,
             "record_count": len(all_records),
             "candidate_count": len(candidates),
             "qualified_count": len(qualified_candidates),

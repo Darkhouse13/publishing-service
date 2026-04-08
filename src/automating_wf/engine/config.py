@@ -130,6 +130,8 @@ class EngineRunOptions:
     min_source_count: int = 1
     # Minimum click_score (reach_hat * ctr_hat) for a keyword to qualify (Stage 2 gate).
     min_click_score: float = 0.01
+    # Jaccard threshold for topic-family suppression (0 = disabled, 1 = only exact match).
+    family_similarity_threshold: float = 0.5
 
     @classmethod
     def from_env(cls, blog_suffix: str) -> "EngineRunOptions":

@@ -637,6 +637,67 @@ def list_categories(target_suffix: str) -> list[dict[str, Any]]:
     return normalized
 
 
+def list_recent_posts(target_suffix: str, max_posts: int = 100) -> list[dict[str, str]]:
+    """Return metadata for recently published posts (for overlap detection).
+
+    Each dict contains ``slug``, ``title``, ``url``, and ``date``.
+    Best-effort: returns an empty list on any network or auth error so that
+    callers can degrade gracefully when WordPress is unreachable.
+    """
+    try:
+        wp_url, wp_user, wp_key = _get_wp_config(target_suffix=target_suffix)
+    except WordPressUploadError:
+        return []
+
+    endpoint = f"{wp_url}/wp-json/wp/v2/posts"
+    try:
+        response = requests.get(
+            endpoint,
+            auth=HTTPBasicAuth(wp_user, wp_key),
+            params={
+                "per_page": min(max_posts, 100),
+                "orderby": "date",
+                "order": "desc",
+                "status": "publish",
+            },
+            timeout=30,
+        )
+    except requests.RequestException:
+        return []
+
+    if response.status_code != 200:
+        return []
+    try:
+        payload = response.json()
+    except ValueError:
+        return []
+    if not isinstance(payload, list):
+        return []
+
+    posts: list[dict[str, str]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        slug = str(item.get("slug", "")).strip()
+        if not slug:
+            continue
+        title_obj = item.get("title")
+        title = ""
+        if isinstance(title_obj, dict):
+            title = html.unescape(str(title_obj.get("rendered", ""))).strip()
+        elif isinstance(title_obj, str):
+            title = html.unescape(title_obj).strip()
+        posts.append(
+            {
+                "slug": slug,
+                "title": title,
+                "url": str(item.get("link", "")).strip(),
+                "date": str(item.get("date", "")).strip(),
+            }
+        )
+    return posts
+
+
 def ensure_category(name: str, target_suffix: str) -> int:
     clean_name = (name or "").strip()
     if not clean_name:

@@ -71,6 +71,7 @@ from automating_wf.scrapers.trends import TRENDS_RETRY_ATTEMPTS, TrendsScraperEr
 from automating_wf.wordpress.uploader import (
     WordPressUploadError,
     list_categories,
+    list_recent_posts,
     publish_post,
     resolve_category_id,
     upload_media,
@@ -1793,6 +1794,14 @@ def _collect_pinclicks_data_sync(
 
     pinclicks_analysis_dir = run_dir / "pinclicks_analysis"
     _ensure_dir(pinclicks_analysis_dir)
+
+    # Best-effort WP post lookup for overlap detection.
+    existing_wp_posts: list[dict[str, str]] = []
+    try:
+        existing_wp_posts = list_recent_posts(target_suffix=suffix, max_posts=100)
+    except Exception:
+        pass
+
     try:
         winners = rank_pinclicks_keywords(
             scrape_results=list(pinclicks_results.values()),
@@ -1802,6 +1811,8 @@ def _collect_pinclicks_data_sync(
             reach_hat_map=reach_hat_map,
             reach_confidence_map=reach_confidence_map,
             min_click_score=opts.min_click_score,
+            family_similarity_threshold=opts.family_similarity_threshold,
+            existing_wp_posts=existing_wp_posts,
         )
     except PinClicksAnalysisError:
         winners = []

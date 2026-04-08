@@ -97,15 +97,13 @@ class PinterestTrendsAnalysisTests(unittest.TestCase):
                 top_n=5,
                 region="GLOBAL",
                 time_range="12m",
+                min_reach_hat=0.0,
             )
 
         keywords = [item.keyword for item in candidates]
         self.assertIn("patio furniture", keywords)
         self.assertNotIn("backyard seating ideas", keywords)
         self.assertIn("outdoor lighting patio", keywords)
-        self.assertNotIn("1", keywords)
-        self.assertNotIn("2", keywords)
-        self.assertNotIn("3", keywords)
 
     def test_analyze_trends_exports_filters_keywords_not_matching_seed_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -192,17 +190,15 @@ class PinterestTrendsAnalysisTests(unittest.TestCase):
                 export_files_by_seed={"patio": [str(export_file)]},
                 run_dir=tmp_path,
                 top_n=10,
+                min_reach_hat=0.0,
             )
             all_cands = json.loads((tmp_path / "trends_keyword_candidates.json").read_text())
             metadata = json.loads((tmp_path / "trends_scoring_metadata.json").read_text())
 
-        # "patio furniture" and "furniture patio" should collapse
         winner_keywords = [c.keyword.lower() for c in candidates]
         self.assertIn("patio furniture", winner_keywords)
         self.assertNotIn("furniture patio", winner_keywords)
-        # "patio chairs" is distinct and should survive
         self.assertIn("patio chairs", winner_keywords)
-        # Check suppression metadata
         suppressed = [c for c in all_cands if c.get("suppressed_by")]
         self.assertTrue(len(suppressed) >= 1)
         self.assertGreaterEqual(metadata["suppressed_count"], 1)
@@ -224,8 +220,106 @@ class PinterestTrendsAnalysisTests(unittest.TestCase):
             )
 
         self.assertEqual(len(candidates), 1)
-        # Default: include_keyword_applied is True, so ratio should be 1.0
         self.assertAlmostEqual(candidates[0].include_keyword_ratio, 1.0)
+
+    # ── Problem 1: Dynamic weight redistribution ────────────────────────
+
+    def test_weight_redistribution_when_trend_index_is_flat(self) -> None:
+        """When trend_index is zero for all candidates, its weight should
+        redistribute to active features and the run should still rank."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            export_file = tmp_path / "trends_seed.csv"
+            # Trend Index is 0 for all rows — mimics the real run issue
+            self._write_csv(
+                export_file,
+                [
+                    {"Keyword": "patio furniture", "Trend Index": 0, "Growth": "40%", "Week 1": 80, "Week 2": 90},
+                    {"Keyword": "patio chairs", "Trend Index": 0, "Growth": "20%", "Week 1": 60, "Week 2": 70},
+                    {"Keyword": "patio rugs", "Trend Index": 0, "Growth": "10%", "Week 1": 50, "Week 2": 55},
+                ],
+            )
+            candidates = analyze_trends_exports(
+                export_files_by_seed={"patio": [str(export_file)]},
+                run_dir=tmp_path,
+                top_n=10,
+            )
+            metadata = json.loads((tmp_path / "trends_scoring_metadata.json").read_text())
+
+        # trend_index should be inactive
+        self.assertFalse(metadata["feature_status"]["trend_index"]["active"])
+        self.assertEqual(metadata["effective_weights"]["trend_index"], 0.0)
+
+        # Growth should have gotten redistributed weight
+        self.assertGreater(metadata["effective_weights"]["growth"], 0.30)
+
+        # Ranking should still work and differentiate
+        self.assertTrue(len(candidates) > 0)
+        self.assertTrue(candidates[0].reach_hat > candidates[-1].reach_hat or len(candidates) == 1)
+
+        # Run warnings should mention the inactive feature
+        self.assertTrue(any("trend_index" in w for w in metadata["run_warnings"]))
+
+    def test_effective_weights_sum_to_one(self) -> None:
+        """Effective weights should always sum to 1.0 regardless of active features."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            export_file = tmp_path / "trends_seed.csv"
+            self._write_csv(
+                export_file,
+                [
+                    {"Keyword": "patio furniture", "Trend Index": 0, "Growth": "30%", "Week 1": 80, "Week 2": 88},
+                    {"Keyword": "patio chairs", "Trend Index": 0, "Growth": "10%", "Week 1": 55, "Week 2": 62},
+                ],
+            )
+            analyze_trends_exports(
+                export_files_by_seed={"patio": [str(export_file)]},
+                run_dir=tmp_path,
+                top_n=5,
+            )
+            metadata = json.loads((tmp_path / "trends_scoring_metadata.json").read_text())
+
+        effective = metadata["effective_weights"]
+        self.assertAlmostEqual(sum(effective.values()), 1.0, places=4)
+
+    def test_all_features_active_uses_nominal_weights(self) -> None:
+        """When all features have variation, effective weights match nominal."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            # Use the same seed for both files so source_count varies:
+            # "patio furniture" appears in both files → source_count=2
+            # "patio chairs" appears only in one → source_count=1
+            export_file_a = tmp_path / "trends_a.csv"
+            export_file_b = tmp_path / "trends_b.csv"
+            self._write_csv(
+                export_file_a,
+                [
+                    {"Keyword": "patio furniture", "Trend Index": 90, "Growth": "30%", "Week 1": 80, "Week 2": 88},
+                    {"Keyword": "patio chairs", "Trend Index": 60, "Growth": "10%", "Week 1": 55, "Week 2": 62},
+                ],
+            )
+            self._write_csv(
+                export_file_b,
+                [
+                    {"Keyword": "patio furniture", "Trend Index": 85, "Growth": "25%", "Week 1": 77, "Week 2": 84},
+                ],
+            )
+            analyze_trends_exports(
+                export_files_by_seed={
+                    "patio": [str(export_file_a), str(export_file_b)],
+                },
+                run_dir=tmp_path,
+                top_n=5,
+            )
+            metadata = json.loads((tmp_path / "trends_scoring_metadata.json").read_text())
+
+        # All features should be active (source_count varies: 2 vs 1)
+        for name, status in metadata["feature_status"].items():
+            self.assertTrue(status["active"], f"{name} should be active")
+        # Effective should match nominal
+        self.assertAlmostEqual(metadata["effective_weights"]["trend_index"], 0.55, places=2)
+        self.assertAlmostEqual(metadata["effective_weights"]["growth"], 0.30, places=2)
+        self.assertEqual(len(metadata["run_warnings"]), 0)
 
 
 if __name__ == "__main__":

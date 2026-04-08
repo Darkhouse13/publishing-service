@@ -122,6 +122,9 @@ class PinClicksKeywordScore:
     pinclicks_rank: int = 0
     selection_reason: str = ""
     suppressed_by: str = ""
+    topic_family_key: str = ""
+    ctr_model: str = "full"
+    wp_overlap_detail: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

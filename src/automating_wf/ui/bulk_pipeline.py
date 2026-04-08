@@ -861,6 +861,23 @@ def _render_stage_trends(st: Any) -> None:
 
     selected_keywords: list[str] = []
     st.caption(f"Run ID: {trend_candidates.run_id}")
+
+    # Show run warnings from Stage 1 metadata (e.g. inactive features)
+    _trends_metadata_path = Path(trend_candidates.run_dir) / "trends_analysis" / "trends_scoring_metadata.json"
+    if _trends_metadata_path.exists():
+        try:
+            _tmeta = json.loads(_trends_metadata_path.read_text(encoding="utf-8"))
+            for _warn in _tmeta.get("run_warnings", []):
+                st.warning(_warn)
+            _ew = _tmeta.get("effective_weights", {})
+            if _ew:
+                st.caption(
+                    "Effective reach weights: "
+                    + ", ".join(f"{k} {v:.0%}" for k, v in _ew.items() if v > 0)
+                )
+        except Exception:
+            pass
+
     for index, item in enumerate(trend_candidates.ranked_keywords):
         keyword = str(item.get("keyword", "")).strip()
         if not keyword:
