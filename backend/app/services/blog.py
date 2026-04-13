@@ -50,6 +50,12 @@ class BlogService:
             url=data.url,
             wp_username=data.wp_username,
             wp_app_password_encrypted=encrypt(data.wp_application_password),
+            profile_prompt=data.profile_prompt,
+            fallback_category=data.fallback_category,
+            deprioritized_category=data.deprioritized_category,
+            category_keywords=data.category_keywords,
+            pinterest_board_map=data.pinterest_board_map,
+            seed_keywords=data.seed_keywords,
         )
         self._session.add(blog)
         await self._session.flush()

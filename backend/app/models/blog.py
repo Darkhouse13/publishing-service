@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, String, event
+from sqlalchemy import JSON, Boolean, DateTime, String, Text, event
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -73,6 +73,38 @@ class Blog(Base):
         DateTime(timezone=True),
         nullable=True,
         default=None,
+    )
+
+    # --- Pipeline configuration fields ---
+    profile_prompt: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="",
+    )
+    fallback_category: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        default="",
+    )
+    deprioritized_category: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        default="",
+    )
+    category_keywords: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    pinterest_board_map: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    seed_keywords: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
     )
 
 
