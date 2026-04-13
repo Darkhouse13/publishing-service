@@ -92,5 +92,7 @@ app.include_router(health_router)
 # ---------------------------------------------------------------------------
 
 from app.api.blogs import router as blogs_router  # noqa: E402
+from app.api.credentials import router as credentials_router  # noqa: E402
 
 app.include_router(blogs_router)
+app.include_router(credentials_router)
