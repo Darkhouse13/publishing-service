@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -13,6 +13,12 @@ class RunResponse(BaseModel):
     id: uuid.UUID
     blog_id: uuid.UUID
     status: str
+    run_code: str
+    phase: str = "pending"
+    seed_keywords: list = []
+    config_snapshot: dict[str, Any] = {}
+    results_summary: dict[str, Any] = {}
+    csv_path: Optional[str] = None
     articles_total: int
     articles_completed: int
     articles_failed: int

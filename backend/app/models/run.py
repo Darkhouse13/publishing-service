@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -31,6 +31,36 @@ class Run(Base):
         String(50),
         default="pending",
         nullable=False,
+    )
+    run_code: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        unique=True,
+    )
+    phase: Mapped[str] = mapped_column(
+        String(30),
+        default="pending",
+        nullable=False,
+    )
+    seed_keywords: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+    config_snapshot: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    results_summary: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    csv_path: Mapped[Optional[str]] = mapped_column(
+        String(1000),
+        nullable=True,
+        default=None,
     )
     articles_total: Mapped[int] = mapped_column(
         Integer,

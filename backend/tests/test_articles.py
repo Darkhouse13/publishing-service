@@ -78,7 +78,7 @@ async def run_in_db(
     blog_in_db: Blog,
 ) -> Run:
     """Create and persist a Run linked to ``blog_in_db``."""
-    run = Run(blog_id=blog_in_db.id)
+    run = Run(blog_id=blog_in_db.id, run_code="TESTRUN001")
     db_session.add(run)
     await db_session.flush()
     await db_session.refresh(run)
