@@ -96,6 +96,7 @@ def generate_single_article_draft(
     blog_profile: str,
     out_dir: Path,
     focus_keyword: str | None = None,
+    prompt_type: str = "standard",
     repair_system_prompt: str | None = None,
     validator_artifact_root: Path | None = None,
 ) -> SingleArticleDraftResult:
@@ -123,6 +124,7 @@ def generate_single_article_draft(
             vibe=vibe,
             blog_profile=profile_text,
             focus_keyword=focus_keyword,
+            prompt_type=prompt_type,
         )
     except ArticleValidationError as exc:
         generation_errors = list(exc.errors or [])

@@ -12,6 +12,7 @@ from automating_wf.config.blogs import (
     fetch_vibes_for_blog,
     resolve_blog_config,
     resolve_blog_profile,
+    resolve_prompt_type,
     resolve_target_suffix,
     suggest_primary_category,
 )
@@ -354,6 +355,7 @@ def _render_single_article_tab() -> None:
                             vibe=st.session_state.selected_vibe,
                             blog_profile=resolve_blog_profile(st.session_state.selected_blog),
                             out_dir=TMP_DIR,
+                            prompt_type=resolve_prompt_type(st.session_state.selected_blog),
                         )
                         status.update(label="Article generated!", state="complete")
                     except Exception:
@@ -366,6 +368,7 @@ def _render_single_article_tab() -> None:
                         vibe=st.session_state.selected_vibe,
                         blog_profile=resolve_blog_profile(st.session_state.selected_blog),
                         out_dir=TMP_DIR,
+                        prompt_type=resolve_prompt_type(st.session_state.selected_blog),
                     )
 
             st.session_state.article_payload = dict(draft_result.article_payload)
@@ -492,27 +495,11 @@ def _render_single_article_tab() -> None:
                         + "). Regenerate the draft and try again."
                     )
 
-                try:
-                    category_id = resolve_category_id(
-                        selected_name=st.session_state.selected_category_name,
-                        typed_new_name="",
-                        target_suffix=target_suffix,
-                    )
-                except WordPressUploadError:
-                    # Re-fetch once in case category state changed between load and publish.
-                    category_payload = list_categories(target_suffix=target_suffix)
-                    st.session_state.category_options = _sorted_category_names(
-                        [str(item.get("name", "")).strip() for item in category_payload],
-                        deprioritized_category=str(
-                            selected_blog_config.get("deprioritized_category", "")
-                        ),
-                    )
-                    st.session_state.category_fetch_error = None
-                    category_id = resolve_category_id(
-                        selected_name=st.session_state.selected_category_name,
-                        typed_new_name="",
-                        target_suffix=target_suffix,
-                    )
+                category_id = resolve_category_id(
+                    selected_name=st.session_state.selected_category_name,
+                    typed_new_name="",
+                    target_suffix=target_suffix,
+                )
 
                 publish_result = publish_post(
                     title=article_payload["title"],

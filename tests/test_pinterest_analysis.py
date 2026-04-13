@@ -53,6 +53,24 @@ class PinterestAnalysisTests(unittest.TestCase):
         self.assertTrue(candidates)
         self.assertEqual(candidates[0].term, "delta epsilon zeta")
 
+    def test_score_keyword_candidates_filters_junk_terms(self) -> None:
+        records = [
+            _record("Pin by Alex on coffee", 5),
+            _record("Pin by Alex on coffee", 5),
+            _record("Pin by Alex on coffee", 5),
+            _record("Coffee drinks www com", 5),
+            _record("Coffee drinks www com", 5),
+            _record("Coffee drinks www com", 5),
+        ]
+
+        candidates = score_keyword_candidates(records, min_frequency=3)
+        terms = [item.term for item in candidates]
+
+        self.assertIn("coffee drinks", terms)
+        self.assertNotIn("pin by", terms)
+        self.assertNotIn("www", terms)
+        self.assertNotIn("com", terms)
+
     def test_analyze_seed_truncates_overlong_pin_fields(self) -> None:
         records = [
             _record("delta epsilon zeta", 10),

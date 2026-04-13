@@ -4,6 +4,172 @@ from typing import Any, Callable
 
 
 VIBE_SUGGESTION_COUNT = 12
+RECIPE_CATEGORY_KEYWORDS: dict[str, list[str]] = {
+    "recipes": [],
+    "breakfast & brunch": [
+        "breakfast",
+        "brunch",
+        "eggs",
+        "omelet",
+        "omelette",
+        "pancakes",
+        "waffles",
+        "granola",
+        "smoothie",
+        "french toast",
+        "muffins",
+        "avocado toast",
+    ],
+    "quick lunches": [
+        "lunch",
+        "salad",
+        "sandwich",
+        "wrap",
+        "grain bowl",
+        "bowl",
+        "soup",
+        "meal prep lunch",
+        "desk lunch",
+        "midday meal",
+        "15-minute lunch",
+        "20-minute lunch",
+    ],
+    "weeknight dinner": [
+        "weeknight",
+        "dinner",
+        "one-pan",
+        "one pot",
+        "one-pot",
+        "sheet pan",
+        "skillet",
+        "30-minute dinner",
+        "family dinner",
+        "pasta",
+        "chicken dinner",
+        "salmon dinner",
+    ],
+    "sunday supper": [
+        "sunday supper",
+        "sunday dinner",
+        "slow-cooked",
+        "slow cooked",
+        "braise",
+        "braised",
+        "roast",
+        "family-style",
+        "gathering",
+        "shared table",
+        "centerpiece",
+    ],
+    "appetizers": [
+        "appetizer",
+        "starter",
+        "snack",
+        "dip",
+        "crostini",
+        "canape",
+        "bite-sized",
+        "party platter",
+        "charcuterie",
+        "small plates",
+    ],
+    "desserts": [
+        "dessert",
+        "cake",
+        "cookie",
+        "brownies",
+        "tart",
+        "pie",
+        "pudding",
+        "ice cream",
+        "chocolate",
+        "sweet treat",
+    ],
+    "vegetarian": [
+        "vegetarian",
+        "meatless",
+        "veggie",
+        "vegetable-forward",
+        "lentils",
+        "chickpeas",
+        "beans",
+        "paneer",
+        "mushroom",
+    ],
+    "vegan": [
+        "vegan",
+        "plant-based",
+        "dairy-free",
+        "egg-free",
+        "cashew cream",
+        "tempeh",
+        "tofu",
+        "coconut milk",
+        "no butter",
+    ],
+    "gluten-free": [
+        "gluten-free",
+        "gluten free",
+        "rice flour",
+        "almond flour",
+        "cornstarch",
+        "celiac",
+        "without flour",
+    ],
+    "low carb": [
+        "low carb",
+        "keto",
+        "cauliflower rice",
+        "zucchini noodles",
+        "lettuce wraps",
+        "high protein",
+        "low-sugar",
+    ],
+    "spring produce": [
+        "spring",
+        "asparagus",
+        "peas",
+        "ramps",
+        "radish",
+        "artichoke",
+        "rhubarb",
+        "strawberries",
+        "fava",
+    ],
+    "summer grilling": [
+        "grill",
+        "grilled",
+        "grilling",
+        "barbecue",
+        "bbq",
+        "skewers",
+        "corn on the cob",
+        "cookout",
+        "flame-kissed",
+    ],
+    "autumn baking": [
+        "autumn",
+        "fall baking",
+        "pumpkin",
+        "apple",
+        "pear",
+        "cinnamon",
+        "loaf cake",
+        "crumble",
+        "coffee cake",
+    ],
+    "winter comfort": [
+        "winter",
+        "comfort food",
+        "cozy",
+        "stew",
+        "chili",
+        "casserole",
+        "soup",
+        "pot roast",
+        "warming bowl",
+    ],
+}
 
 BLOG_CONFIGS: dict[str, dict[str, Any]] = {
     "The Weekend Folio": {
@@ -13,6 +179,7 @@ BLOG_CONFIGS: dict[str, dict[str, Any]] = {
             "self-improvement."
         ),
         "wp_env_suffix": "THE_WEEKEND_FOLIO",
+        "prompt_type": "standard",
         "fallback_category": "Weekend Living",
         "deprioritized_category": "Uncategorized",
         "category_keywords": {
@@ -24,63 +191,31 @@ BLOG_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "Your Midnight Desk": {
         "profile_prompt": (
-            "Dark mode productivity and desk-setup blog focused on workspaces, "
-            "lighting, peripherals, software workflows, and intentional deep-work "
-            "routines."
+            "Recipe and food blog featuring easy-to-follow home-cooked recipes, "
+            "meal planning ideas, weeknight dinners, baking, comfort food, "
+            "and seasonal cooking inspiration."
         ),
         "wp_env_suffix": "YOUR_MIDNIGHT_DESK",
-        "fallback_category": "Desk Setup",
-        "deprioritized_category": "Uncategorized",
-        "category_keywords": {
-            "desk setup": ["desk", "workspace", "monitor", "chair", "ergonomic"],
-            "productivity": ["productivity", "focus", "workflow", "routine", "deep work"],
-            "gear": ["keyboard", "mouse", "microphone", "peripheral", "laptop"],
-            "lighting": ["lighting", "rgb", "lamp", "ambient", "backlight"],
-        },
+        "prompt_type": "recipe",
+        "fallback_category": "Recipes",
+        "deprioritized_category": "Recipes",
+        "category_keywords": RECIPE_CATEGORY_KEYWORDS,
     },
     "The Sunday Patio": {
         "profile_prompt": (
-            "Outdoor living blog focused on patios, backyard lifestyle, seasonal "
-            "gardening, outdoor entertaining, and practical weekend DIY improvements."
+            "Recipe and food blog featuring easy-to-follow home-cooked recipes, "
+            "meal planning ideas, weeknight dinners, baking, comfort food, "
+            "and seasonal cooking inspiration."
         ),
         "wp_env_suffix": "THE_SUNDAY_PATIO",
-        "fallback_category": "Outdoor Living",
-        "deprioritized_category": "Backyard Ideas",
-        "category_keywords": {
-            "outdoor living": [
-                "patio",
-                "outdoor",
-                "deck",
-                "backyard setup",
-                "lounging",
-                "outdoor furniture",
-            ],
-            "curb appeal": ["curb", "front yard", "entryway", "facade", "mailbox", "pathway"],
-            "backyard gardening": [
-                "garden",
-                "gardening",
-                "plant",
-                "soil",
-                "pruning",
-                "compost",
-                "container",
-                "perennial",
-            ],
-            "grilling & entertaining": [
-                "grill",
-                "bbq",
-                "barbecue",
-                "smoker",
-                "fire pit",
-                "hosting",
-                "guests",
-                "party",
-            ],
-        },
+        "prompt_type": "recipe",
+        "fallback_category": "Recipes",
+        "deprioritized_category": "Recipes",
+        "category_keywords": RECIPE_CATEGORY_KEYWORDS,
     },
 }
 DEFAULT_BLOG_PROFILE = "The Sunday Patio"
-CATEGORY_TOKEN_STOPWORDS = {"and", "backyard", "outdoor", "ideas", "living"}
+CATEGORY_TOKEN_STOPWORDS = {"and", "backyard", "food", "ideas", "living", "low", "outdoor", "quick", "recipes"}
 
 
 def resolve_blog_config(selected_blog: str) -> dict[str, Any]:
@@ -91,6 +226,10 @@ def resolve_blog_config(selected_blog: str) -> dict[str, Any]:
 
 def resolve_blog_profile(selected_blog: str) -> str:
     return str(resolve_blog_config(selected_blog)["profile_prompt"])
+
+
+def resolve_prompt_type(selected_blog: str) -> str:
+    return str(resolve_blog_config(selected_blog).get("prompt_type", "standard"))
 
 
 def resolve_target_suffix(selected_blog: str) -> str:

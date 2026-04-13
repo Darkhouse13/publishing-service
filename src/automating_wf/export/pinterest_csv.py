@@ -143,6 +143,11 @@ def _timezone_name() -> str:
     return os.getenv("WP_TIMEZONE", "UTC").strip() or "UTC"
 
 
+def csv_timezone_name() -> str:
+    """Expose the effective CSV scheduling timezone name."""
+    return _timezone_name()
+
+
 def _load_zoneinfo(name: str) -> Any:
     try:
         from zoneinfo import ZoneInfo
@@ -152,6 +157,16 @@ def _load_zoneinfo(name: str) -> Any:
         return ZoneInfo(name)
     except Exception:
         return ZoneInfo("UTC")
+
+
+def csv_timezone() -> Any:
+    """Return the effective CSV scheduling timezone object."""
+    return _load_zoneinfo(_timezone_name())
+
+
+def default_auto_publish_datetime() -> datetime:
+    """Return the next rounded scheduling slot in the effective timezone."""
+    return round_up_to_next_window(datetime.now(csv_timezone()), ROUNDING_MINUTES)
 
 
 def round_up_to_next_window(dt: datetime, window_minutes: int = ROUNDING_MINUTES) -> datetime:
@@ -196,10 +211,12 @@ def _parse_publish_date(value: str, zone: Any) -> datetime | None:
     return None
 
 
-def _select_next_publish_date(existing_rows: list[dict[str, str]], cadence_minutes: int, zone: Any) -> datetime:
-    now = datetime.now(zone)
-    rounded_now = round_up_to_next_window(now, ROUNDING_MINUTES)
+def parse_csv_publish_date(value: str) -> datetime | None:
+    """Parse a CSV publish date string using the effective scheduling timezone."""
+    return _parse_publish_date(value, csv_timezone())
 
+
+def _select_next_publish_date(existing_rows: list[dict[str, str]], cadence_minutes: int, zone: Any) -> datetime:
     latest: datetime | None = None
     for row in existing_rows:
         parsed = _parse_publish_date(str(row.get("Publish date", "")), zone)
@@ -208,13 +225,44 @@ def _select_next_publish_date(existing_rows: list[dict[str, str]], cadence_minut
         if latest is None or parsed > latest:
             latest = parsed
 
-    if latest is None or latest < rounded_now:
-        return rounded_now
+    if latest is None:
+        return round_up_to_next_window(datetime.now(zone), ROUNDING_MINUTES)
     return latest + timedelta(minutes=max(1, cadence_minutes))
 
 
 def _format_publish_date_utc(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def preview_publish_schedule(
+    *,
+    first_publish_at: str | None,
+    cadence_minutes: int,
+    count: int,
+) -> list[dict[str, str]]:
+    """Build a local/UTC preview of upcoming publish slots."""
+    if count <= 0:
+        return []
+    zone = csv_timezone()
+    if first_publish_at:
+        first_dt = _parse_publish_date(str(first_publish_at), zone)
+        if first_dt is None:
+            return []
+    else:
+        first_dt = default_auto_publish_datetime()
+
+    slots: list[dict[str, str]] = []
+    interval = max(1, int(cadence_minutes))
+    for index in range(count):
+        current = first_dt + timedelta(minutes=index * interval)
+        slots.append(
+            {
+                "index": str(index + 1),
+                "local": current.strftime("%Y-%m-%d %H:%M"),
+                "utc": _format_publish_date_utc(current),
+            }
+        )
+    return slots
 
 
 def _is_http_url(value: str) -> bool:
@@ -329,6 +377,7 @@ def append_csv_row(
     row: CsvRow,
     csv_path: Path,
     cadence_minutes: int = DEFAULT_CADENCE_MINUTES,
+    initial_publish_date: str | None = None,
 ) -> dict[str, Any]:
     _validate_row_fields(row)
 
@@ -365,6 +414,15 @@ def append_csv_row(
                 raise ExporterError(
                     "Publish date is invalid. Use YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, or legacy local format."
                 )
+            publish_dt = parsed_publish_date
+        elif not rows and str(initial_publish_date or "").strip():
+            parsed_publish_date = _parse_publish_date(str(initial_publish_date), zone)
+            if parsed_publish_date is None:
+                raise ExporterError(
+                    "First CSV publish datetime is invalid. Use YYYY-MM-DD HH:MM or ISO datetime."
+                )
+            if parsed_publish_date <= datetime.now(zone):
+                raise ExporterError("First CSV publish datetime must be in the future.")
             publish_dt = parsed_publish_date
         else:
             publish_dt = _select_next_publish_date(rows, cadence_minutes=cadence_minutes, zone=zone)

@@ -14,7 +14,7 @@ from automating_wf.models.pinterest import PinClicksKeywordScore, SeedScrapeResu
 
 
 # Bump when scoring logic changes to invalidate cached artifacts.
-SCORING_VERSION = "2.2.0-ctr"
+SCORING_VERSION = "2.2.1-ctr"
 
 # Nominal CTR weights.  Per-keyword effective weights are renormalized
 # when engagement data is unavailable for that keyword.
@@ -233,7 +233,7 @@ def _check_wp_overlap(
       1. **slug_match** — candidate slug == existing slug (after stripping ``-N``)
       2. **title_token_match** — content tokens of candidate == of title
       3. **token_jaccard** ≥ 0.7 on content tokens → suppress
-      4. **containment** — candidate tokens ⊆ title tokens or vice versa (min 2 tokens)
+      4. **containment** — candidate tokens ⊆ title tokens or vice versa (min 2 tokens) → warn only
       5. **token_jaccard** ≥ 0.5 on content tokens → warn only
 
     Returns a dict with keys: ``action`` (suppress/warn/none), ``signal``,
@@ -286,10 +286,13 @@ def _check_wp_overlap(
         if jac >= WP_OVERLAP_SUPPRESS_JACCARD:
             return _result("suppress", "token_jaccard", jac)
 
-        # Signal 4: strict containment (one is a proper subset of the other)
+        # Signal 4: strict containment is too broad for suppression because
+        # titles often add branded or format-specific qualifiers.
         if len(candidate_content) >= 2 and len(post_content) >= 2:
             if candidate_content < post_content or post_content < candidate_content:
-                return _result("suppress", "containment", jac)
+                if jac > best.get("jaccard", 0):
+                    best = _result("warn", "containment", jac)
+                continue
 
         # Signal 5: moderate Jaccard → warn only
         if jac >= WP_OVERLAP_WARN_JACCARD and jac > best.get("jaccard", 0):

@@ -30,6 +30,8 @@ class EngineConfigTests(unittest.TestCase):
         self.assertEqual(opts.trends_top_n, 17)
         self.assertEqual(opts.winners_count, 6)
         self.assertEqual(opts.publish_status, "pending")
+        self.assertIsNone(opts.csv_first_publish_at)
+        self.assertEqual(opts.csv_cadence_minutes, 240)
         self.assertEqual(opts.pinclicks_max_records, 25)
         self.assertFalse(opts.headed)
         self.assertIsNone(opts.resume_run_id)
@@ -59,6 +61,8 @@ class EngineConfigTests(unittest.TestCase):
                     "trends_top_n": 9,
                     "winners_count": 3,
                     "publish_status": "publish",
+                    "csv_first_publish_at": "2026-03-16 09:30",
+                    "csv_cadence_minutes": 180,
                     "headed": True,
                 }
             )
@@ -70,6 +74,8 @@ class EngineConfigTests(unittest.TestCase):
         self.assertEqual(opts.trends_top_n, 9)
         self.assertEqual(opts.winners_count, 3)
         self.assertEqual(opts.publish_status, "publish")
+        self.assertEqual(opts.csv_first_publish_at, "2026-03-16 09:30")
+        self.assertEqual(opts.csv_cadence_minutes, 180)
         self.assertTrue(opts.headed)
 
     def test_from_ui_minimal_payload_matches_from_env_defaults(self) -> None:
@@ -94,4 +100,3 @@ class EngineConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

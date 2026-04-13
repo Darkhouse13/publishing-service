@@ -7,7 +7,9 @@ from unittest.mock import patch
 
 from automating_wf.content.generators import ArticleValidationError
 from automating_wf.engine.pipeline import (
+    RUN_OPTIONS_NAME,
     TRENDS_TOP_KEYWORDS_FILE,
+    _build_summary,
     _build_csv_keywords,
     _is_valid_trend_keyword,
     _load_cached_top_keywords,
@@ -213,7 +215,7 @@ class PinterestEngineTests(unittest.TestCase):
             ), patch(
                 "automating_wf.engine.pipeline.append_csv_row",
                 return_value={"publish_date": "2026-02-17 00:45"},
-            ), patch(
+            ) as mock_append_csv_row, patch(
                 "automating_wf.engine.pipeline._append_manifest"
             ):
                 _process_winner(
@@ -225,6 +227,8 @@ class PinterestEngineTests(unittest.TestCase):
                     trend_rank=5,
                     pinclicks_rank=2,
                     repair_system_prompt="Fix only requested sections.",
+                    csv_first_publish_at="2026-03-16 09:30",
+                    csv_cadence_minutes=180,
                 )
 
         self.assertIn("generate_article", call_order)
@@ -235,6 +239,8 @@ class PinterestEngineTests(unittest.TestCase):
         )
         self.assertTrue(pin_call_kwargs)
         self.assertEqual(pin_call_kwargs[0].get("blog_name"), "The Sunday Patio")
+        self.assertEqual(mock_append_csv_row.call_args.kwargs["initial_publish_date"], "2026-03-16 09:30")
+        self.assertEqual(mock_append_csv_row.call_args.kwargs["cadence_minutes"], 180)
 
     def test_process_winner_marks_article_failed_when_validator_exhausts_retries(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -416,6 +422,8 @@ class PinterestEngineTests(unittest.TestCase):
                             "Publish Date": "2026-02-17 00:45",
                         },
                         "csv_path": str(csv_path),
+                        "csv_first_publish_at": "2026-02-18 09:30",
+                        "csv_cadence_minutes": 180,
                     },
                 }
             }
@@ -437,6 +445,8 @@ class PinterestEngineTests(unittest.TestCase):
         self.assertEqual(row_arg.publish_date, "2026-02-17 00:45")
         self.assertEqual(row_arg.thumbnail, "")
         self.assertEqual(row_arg.keywords, "")
+        self.assertEqual(mock_append_csv_row.call_args.kwargs["initial_publish_date"], "2026-02-18 09:30")
+        self.assertEqual(mock_append_csv_row.call_args.kwargs["cadence_minutes"], 180)
 
     def test_replay_pending_csv_supports_pinterest_pending_row_keys(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -479,6 +489,7 @@ class PinterestEngineTests(unittest.TestCase):
         self.assertEqual(row_arg.pinterest_board, "New Board")
         self.assertEqual(row_arg.publish_date, "2026-02-17T08:00:00")
         self.assertEqual(row_arg.keywords, "keyword one, keyword two")
+        self.assertIsNone(mock_append_csv_row.call_args.kwargs["initial_publish_date"])
 
     def test_replay_pending_csv_resolves_missing_board_from_mapping(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -520,6 +531,26 @@ class PinterestEngineTests(unittest.TestCase):
 
         row_arg = mock_append_csv_row.call_args.kwargs["row"]
         self.assertEqual(row_arg.pinterest_board, "Weekend Lifestyle Ideas")
+
+    def test_build_summary_includes_csv_schedule_from_run_options(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            run_dir = Path(tmp_dir)
+            (run_dir / RUN_OPTIONS_NAME).write_text(
+                json.dumps(
+                    {
+                        "blog_suffix": "THE_SUNDAY_PATIO",
+                        "csv_first_publish_at": "2099-01-01 09:30",
+                        "csv_cadence_minutes": 180,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            summary = _build_summary(run_dir, blog_suffix="THE_SUNDAY_PATIO")
+
+        self.assertEqual(summary["csv_schedule"]["first_publish_at"], "2099-01-01 09:30")
+        self.assertEqual(summary["csv_schedule"]["cadence_minutes"], 180)
+        self.assertTrue(summary["csv_schedule"]["preview_slots"])
 
 
 if __name__ == "__main__":

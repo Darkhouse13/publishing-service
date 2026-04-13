@@ -71,7 +71,7 @@ Automating_WF/
 ├── tests/                      # pytest suite
 ├── docs/                       # Documentation and reference
 ├── scripts/                    # Build utilities (theme ZIP builder)
-├── assets/theme/               # WordPress theme source files (The Sunday Patio)
+├── assets/theme/               # WordPress theme source files
 └── artifacts/                  # Runtime output (gitignored)
 ```
 
@@ -81,7 +81,9 @@ Automating_WF/
 
 1. **Configuration** — Select blog, enter seed keywords, set filters (region, range, top-N), target article count
 2. **Trends Collection** — Playwright scrapes Pinterest Trends → CSV parsing → hybrid ranking (trend index 50%, growth 30%, consistency 20%)
-3. **PinClicks Analysis** — Playwright scrapes PinClicks top-pins per keyword → scoring by frequency (50%), engagement (35%), intent (15%)
+3. **PinClicks Analysis** - real Brave with the persistent `PinFlow` profile scrapes PinClicks top-pins per keyword and scores by frequency (50%), engagement (35%), intent (15%)
+   - First run requires a one-time manual PinClicks login in the `PinFlow` Brave profile
+   - Normal automated runs reuse that session and launch Brave off-screen instead of using headless mode
 4. **Generation + Publishing** — For each winner keyword:
    - LLM analysis → `BrainOutput` (primary keyword, image prompt, pin text)
    - DeepSeek article generation with SEO validation
@@ -100,7 +102,7 @@ Blog selection → vibe suggestions → topic input → category suggestion → 
 | Blog | Env Suffix | Niche |
 |------|-----------|-------|
 | The Weekend Folio | `THE_WEEKEND_FOLIO` | Lifestyle / weekend planning |
-| Your Midnight Desk | `YOUR_MIDNIGHT_DESK` | Productivity / desk setup |
+| Your Midnight Desk | `YOUR_MIDNIGHT_DESK` | Editorial recipes / food |
 | The Sunday Patio | `THE_SUNDAY_PATIO` | Outdoor living / gardening |
 
 ## Environment Variables
@@ -120,7 +122,7 @@ See `.env.example` for the full list. Key groups:
 ## Output Paths
 
 - Per-run Pinterest CSV: `tmp/pinterest_engine/<run_id>/pinterest_bulk_upload_<blog_suffix>.csv`
-- Theme ZIP: `artifacts/theme/the-sunday-patio.zip`
+- Theme ZIP: `artifacts/theme/yourmidnightdesk.zip`
 - Run artifacts: `tmp/pinterest_engine/<run_id>/` (manifest, trends, pinclicks, images)
 
 Artifact base paths can be overridden via environment variables (see `src/automating_wf/config/paths.py`).

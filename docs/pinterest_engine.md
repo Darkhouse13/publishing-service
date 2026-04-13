@@ -3,7 +3,7 @@
 This project includes `pinterest_engine.py` for a dual-source workflow:
 
 1. Pinterest Trends export (authenticated) -> keyword ranking.
-2. PinClicks Top Pins export (authenticated) for ranked trend keywords.
+2. PinClicks Top Pins crawl (authenticated via Cloudflare Browser Rendering `/crawl`) for ranked trend keywords.
 3. Winner keywords run through generation -> WordPress draft publish -> Pinterest CSV row export.
 
 Pinterest account credentials are used only for Trends scraping.  
@@ -19,6 +19,8 @@ This workflow does not generate a Pinterest ZIP package.
 - `PINCLICKS_USERNAME`
 - `PINCLICKS_PASSWORD`
 - `PINCLICKS_TOP_PINS_URL_TEMPLATE`
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`
 - `WP_URL_<BLOG_SUFFIX>`
 - `WP_USER_<BLOG_SUFFIX>`
 - `WP_KEY_<BLOG_SUFFIX>`
@@ -35,6 +37,8 @@ This workflow does not generate a Pinterest ZIP package.
 - `PINTEREST_PINCLICKS_WINNERS_PER_RUN` default `5`
 - `PINTEREST_STORAGE_STATE_PATH` default `%USERPROFILE%/.codex/secrets/pinterest_state.json`
 - `PINCLICKS_STORAGE_STATE_PATH` default `%USERPROFILE%/.codex/secrets/pinclicks_state.json`
+- `PINCLICKS_CRAWL_MAX_PAGES` default `3`
+- `CLOUDFLARE_BROWSER_RENDERING_BASE_URL` default `https://api.cloudflare.com/client/v4/accounts`
 - `PINTEREST_CSV_PATH_TEMPLATE` default `artifacts/exports/pinterest_bulk_upload_{blog_suffix}.csv`
 - `PINTEREST_CSV_CADENCE_MINUTES` default `240`
 - `FAL_MODEL_PIN` fallback to `FAL_MODEL`
@@ -125,6 +129,15 @@ Template controls:
 ```bash
 python pinterest_engine.py --blog THE_SUNDAY_PATIO
 ```
+
+## PinClicks Stage 3
+
+Stage 3 now uses Cloudflare Browser Rendering `/crawl` instead of local PinClicks browser automation.
+
+- The start URL is still built from `PINCLICKS_TOP_PINS_URL_TEMPLATE`.
+- Authentication is forwarded from `PINCLICKS_STORAGE_STATE_PATH`; that file must contain a valid PinClicks session.
+- If the session is missing or expired, Stage 3 fails fast with `authentication_failed`.
+- If Cloudflare returns content but no usable pin records, Stage 3 reports a crawl/parse failure instead of silently switching back to synthetic PinClicks input.
 
 Resume a run:
 

@@ -423,6 +423,40 @@ class PinClicksAnalysisTests(unittest.TestCase):
         winner_keywords = [w.keyword for w in winners]
         self.assertIn("knitting basics", winner_keywords)
 
+    def test_wp_containment_overlap_warns_but_keeps_distinct_topic(self) -> None:
+        """Containment alone should warn, not suppress broader-but-distinct topics."""
+        result = _seed_result(
+            "spring mocktail recipes",
+            ["Best spring mocktail recipes", "Easy mocktail recipe ideas"],
+            [100, 110],
+        )
+        existing_posts = [
+            {
+                "slug": "dirty-alani-recipes-6",
+                "title": "Dirty Alani Recipes: The Ultimate Caffeinated Mocktail Guide",
+                "url": "https://example.com/dirty-alani-recipes-6/",
+                "date": "2026-03-20",
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            run_dir = Path(tmp_dir)
+            winners = rank_pinclicks_keywords(
+                scrape_results=[result],
+                run_dir=run_dir,
+                top_n=1,
+                reach_hat_map={"spring mocktail recipes": 0.8},
+                existing_wp_posts=existing_posts,
+            )
+            all_scores = json.loads((run_dir / "pinclicks_keyword_scores.json").read_text())
+            metadata = json.loads((run_dir / "pinclicks_ranking_metadata.json").read_text())
+
+        self.assertEqual([w.keyword for w in winners], ["spring mocktail recipes"])
+        candidate = next(s for s in all_scores if s["keyword"] == "spring mocktail recipes")
+        self.assertIn(candidate["selection_reason"], ("pareto_frontier", "backfill"))
+        self.assertIn("containment", candidate["wp_overlap_detail"])
+        self.assertGreaterEqual(metadata["wp_overlap_warning_count"], 1)
+
     def test_wp_no_false_suppression_for_distinct_topics(self) -> None:
         """Clearly distinct topics should not be suppressed by WP overlap."""
         result = _seed_result(

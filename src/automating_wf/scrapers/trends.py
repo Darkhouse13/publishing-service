@@ -132,6 +132,24 @@ EXPORT_BUTTON_TEXT_HINTS = (
     "export",
 )
 
+FILTER_VALUE_ALIASES: dict[str, tuple[str, ...]] = {
+    "global": ("global", "worldwide", "all regions", "all markets", "all"),
+    "12m": ("12m", "12 months", "12 month", "past 12 months", "last 12 months"),
+    "6m": ("6m", "6 months", "6 month", "past 6 months", "last 6 months"),
+    "3m": ("3m", "3 months", "3 month", "past 3 months", "last 3 months"),
+    "1m": ("1m", "1 month", "past 30 days", "last 30 days"),
+    "monthly": ("monthly", "month", "per month"),
+    "weekly": ("weekly", "week", "per week"),
+}
+
+NO_RESULTS_MARKERS: dict[str, str] = {
+    "filters are too narrow": "filters_too_narrow",
+    "try expanding your search": "filters_too_narrow",
+    "switch trend type to top yearly trends": "filters_too_narrow",
+    "no trends found": "no_exportable_results",
+    "no results found": "no_exportable_results",
+}
+
 GENERIC_INCLUDE_TOKENS = {
     "a",
     "an",
@@ -160,6 +178,17 @@ class TrendsScraperError(RuntimeError):
 
 class TrendsCaptchaCheckpointRequired(TrendsScraperError):
     """Raised when human checkpoint is required."""
+
+
+class TrendsNoResultsError(TrendsScraperError):
+    """Raised when a Trends page has no exportable results for the requested filters."""
+
+    def __init__(self, keyword: str, reason: str = "no_exportable_results") -> None:
+        self.keyword = keyword
+        self.reason = reason
+        super().__init__(
+            f"No exportable Pinterest Trends rows for keyword '{keyword}' ({reason})."
+        )
 
 
 def _sleep_random(delay_range: tuple[float, float]) -> None:
@@ -423,7 +452,166 @@ def _build_search_url(base_url: str, keyword: str) -> str:
     return f"{base_url.rstrip('/')}/search/?q={quote_plus(keyword)}"
 
 
-def _set_filter_if_present(page: Any, label: str, option: str) -> None:
+def _filter_aliases(option: str) -> tuple[str, ...]:
+    normalized = _normalize_text(option)
+    if not normalized:
+        return ()
+    aliases = [normalized]
+    aliases.extend(FILTER_VALUE_ALIASES.get(normalized, ()))
+    return tuple(dict.fromkeys(alias for alias in aliases if alias))
+
+
+def _match_filter_option(
+    option: str,
+    available_options: list[dict[str, str]],
+) -> dict[str, str] | None:
+    aliases = _filter_aliases(option)
+    if not aliases:
+        return None
+
+    normalized_options: list[tuple[dict[str, str], str, str]] = []
+    for item in available_options:
+        if not isinstance(item, dict):
+            continue
+        value = str(item.get("value", "")).strip()
+        text = str(item.get("text", "")).strip()
+        normalized_options.append(({"value": value, "text": text}, _normalize_text(value), _normalize_text(text)))
+
+    for alias in aliases:
+        for original, normalized_value, normalized_text in normalized_options:
+            if alias == normalized_value or alias == normalized_text:
+                return original
+
+    for alias in aliases:
+        for original, normalized_value, normalized_text in normalized_options:
+            if alias and (
+                alias in normalized_text
+                or normalized_text in alias
+                or alias in normalized_value
+                or normalized_value in alias
+            ):
+                return original
+    return None
+
+
+def _read_filter_state(page: Any, label: str) -> dict[str, Any]:
+    try:
+        state = page.evaluate(
+            """(label) => {
+              const normalize = (value) => (value || '')
+                .normalize('NFD')
+                .replace(/[\\u0300-\\u036f]/g, '')
+                .replace(/\\s+/g, ' ')
+                .trim()
+                .toLowerCase();
+              const target = normalize(label);
+              const labels = Array.from(document.querySelectorAll('label'));
+              for (const node of labels) {
+                const text = normalize(node.textContent || '');
+                if (!text || (!text.includes(target) && !target.includes(text))) continue;
+                let current = node.parentElement;
+                for (let depth = 0; current && depth < 6; depth += 1, current = current.parentElement) {
+                  const select = current.querySelector('select');
+                  if (!select) continue;
+                  const options = Array.from(select.options).map((opt) => ({
+                    value: (opt.value || '').trim(),
+                    text: (opt.textContent || '').trim(),
+                    selected: !!opt.selected,
+                  }));
+                  const selected = options.find((opt) => opt.selected) || null;
+                  return {
+                    found: true,
+                    value: selected ? selected.value : '',
+                    text: selected ? selected.text : '',
+                    options,
+                  };
+                }
+              }
+              return { found: false, value: '', text: '', options: [] };
+            }""",
+            label,
+        )
+        if isinstance(state, dict):
+            return {
+                "found": bool(state.get("found", False)),
+                "value": str(state.get("value", "")).strip(),
+                "text": str(state.get("text", "")).strip(),
+                "options": state.get("options", []) if isinstance(state.get("options"), list) else [],
+            }
+    except Exception:
+        pass
+    return {"found": False, "value": "", "text": "", "options": []}
+
+
+def _select_filter_option(page: Any, label: str, option_value: str) -> dict[str, Any]:
+    try:
+        result = page.evaluate(
+            """({ label, optionValue }) => {
+              const normalize = (value) => (value || '')
+                .normalize('NFD')
+                .replace(/[\\u0300-\\u036f]/g, '')
+                .replace(/\\s+/g, ' ')
+                .trim()
+                .toLowerCase();
+              const target = normalize(label);
+              const labels = Array.from(document.querySelectorAll('label'));
+              for (const node of labels) {
+                const text = normalize(node.textContent || '');
+                if (!text || (!text.includes(target) && !target.includes(text))) continue;
+                let current = node.parentElement;
+                for (let depth = 0; current && depth < 6; depth += 1, current = current.parentElement) {
+                  const select = current.querySelector('select');
+                  if (!select) continue;
+                  select.value = optionValue;
+                  select.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                  select.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                  const selected = select.options[select.selectedIndex];
+                  return {
+                    applied: true,
+                    value: (selected?.value || '').trim(),
+                    text: (selected?.textContent || '').trim(),
+                  };
+                }
+              }
+              return { applied: false, value: '', text: '' };
+            }""",
+            {"label": label, "optionValue": option_value},
+        )
+        if isinstance(result, dict):
+            return {
+                "applied": bool(result.get("applied", False)),
+                "value": str(result.get("value", "")).strip(),
+                "text": str(result.get("text", "")).strip(),
+            }
+    except Exception:
+        pass
+    return {"applied": False, "value": "", "text": ""}
+
+
+def _resolved_filter_label(state: dict[str, Any], fallback: str) -> str:
+    text = str(state.get("text", "")).strip()
+    value = str(state.get("value", "")).strip()
+    return text or value or str(fallback or "").strip()
+
+
+def _set_filter_if_present(page: Any, label: str, option: str) -> dict[str, Any]:
+    requested = str(option or "").strip()
+    initial_state = _read_filter_state(page, label)
+    available_options = initial_state.get("options", [])
+    matched_option = _match_filter_option(requested, available_options)
+    if matched_option is not None:
+        selected_state = _select_filter_option(page, label, matched_option.get("value", ""))
+        if selected_state.get("applied"):
+            _sleep_random(ACTION_DELAY_RANGE)
+            return {
+                "found": True,
+                "matched": True,
+                "requested": requested,
+                "value": selected_state.get("value", ""),
+                "text": selected_state.get("text", ""),
+                "available_options": available_options,
+            }
+
     try:
         _dismiss_popups(page)
         trigger_candidates = (
@@ -445,7 +633,72 @@ def _set_filter_if_present(page: Any, label: str, option: str) -> None:
                 _sleep_random(ACTION_DELAY_RANGE)
             break
     except Exception:
-        return
+        pass
+    final_state = _read_filter_state(page, label)
+    available = final_state.get("options", []) or available_options
+    matched = _match_filter_option(requested, available)
+    return {
+        "found": bool(final_state.get("found")) or bool(initial_state.get("found")),
+        "matched": bool(matched)
+        and _normalize_text(requested)
+        in {
+            _normalize_text(final_state.get("value", "")),
+            _normalize_text(final_state.get("text", "")),
+            *set(_filter_aliases(final_state.get("value", ""))),
+            *set(_filter_aliases(final_state.get("text", ""))),
+        },
+        "requested": requested,
+        "value": final_state.get("value", ""),
+        "text": final_state.get("text", ""),
+        "available_options": available,
+    }
+
+
+def _export_button_disabled(page: Any) -> bool:
+    try:
+        return bool(
+            page.evaluate(
+                """(textHints) => {
+                  const normalize = (value) => (value || '')
+                    .normalize('NFD')
+                    .replace(/[\\u0300-\\u036f]/g, '')
+                    .replace(/\\s+/g, ' ')
+                    .trim()
+                    .toLowerCase();
+                  const visible = (node) => {
+                    const rect = node.getBoundingClientRect();
+                    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+                    const style = window.getComputedStyle(node);
+                    return style.visibility !== 'hidden' && style.display !== 'none';
+                  };
+                  const matchesHint = (text) => textHints.some((hint) => text.includes(hint));
+                  const nodes = Array.from(document.querySelectorAll('button,[role="button"],a'));
+                  for (const node of nodes) {
+                    if (!visible(node)) continue;
+                    const text = normalize((node.getAttribute('aria-label') || '') + ' ' + (node.textContent || ''));
+                    if (!text || !matchesHint(text)) continue;
+                    const disabled = node.disabled === true
+                      || (node.getAttribute('aria-disabled') || '').toLowerCase() === 'true';
+                    if (disabled) return true;
+                  }
+                  return false;
+                }""",
+                list(EXPORT_BUTTON_TEXT_HINTS),
+            )
+        )
+    except Exception:
+        return False
+
+
+def _detect_no_results_reason(page: Any) -> str:
+    body = _body_text(page)
+    if body:
+        for marker, reason in NO_RESULTS_MARKERS.items():
+            if marker in body:
+                return reason
+    if _export_button_disabled(page) and ("no results" in body or "0 results" in body):
+        return "no_exportable_results"
+    return ""
 
 
 def _include_keyword_panel_open(page: Any) -> bool:
@@ -784,6 +1037,10 @@ def _download_export(page: Any, keyword_dir: Path, keyword: str) -> Path:
 
     for export_attempt in range(1, 4):
         _dismiss_popups(page)
+        no_results_reason = _detect_no_results_reason(page)
+        if no_results_reason:
+            _save_keyword_debug_artifacts(page, keyword_dir, "no_results")
+            raise TrendsNoResultsError(keyword, no_results_reason)
         if not _verify_keyword_filter_applied(page, include_keyword):
             _apply_include_keyword_filter(page, include_keyword)
             _dismiss_popups(page)
@@ -805,6 +1062,11 @@ def _download_export(page: Any, keyword_dir: Path, keyword: str) -> Path:
             except Exception:
                 _dismiss_popups(page)
                 continue
+
+        no_results_reason = _detect_no_results_reason(page)
+        if no_results_reason:
+            _save_keyword_debug_artifacts(page, keyword_dir, "no_results")
+            raise TrendsNoResultsError(keyword, no_results_reason)
 
         try:
             with page.expect_download(timeout=12000) as download_info:
@@ -946,10 +1208,20 @@ def scrape_trends_exports(
                     try:
                         include_keyword_applied = _search_keyword(page, seed_keyword, base_url, seed_dir)
                         _dismiss_popups(page)
-                        _set_filter_if_present(page, "Region", region)
-                        _set_filter_if_present(page, "Time", time_range)
-                        _set_filter_if_present(page, "Date", time_range)
+                        region_state = _set_filter_if_present(page, "Region", region)
+                        time_state = _set_filter_if_present(page, "Time", time_range)
+                        date_state = _set_filter_if_present(page, "Date", time_range)
                         _dismiss_popups(page)
+                        applied_region = _resolved_filter_label(region_state, region)
+                        applied_time_range = _resolved_filter_label(
+                            date_state if date_state.get("found") else time_state,
+                            time_range,
+                        )
+                        filter_mismatches = {
+                            "region": bool(region_state.get("found")) and not bool(region_state.get("matched")),
+                            "time": bool(time_state.get("found")) and not bool(time_state.get("matched")),
+                            "date": bool(date_state.get("found")) and not bool(date_state.get("matched")),
+                        }
                         if _contains_challenge(page):
                             if headed:
                                 print(
@@ -972,12 +1244,34 @@ def scrape_trends_exports(
                             {
                                 "seed_keyword": seed_keyword,
                                 "region": region,
+                                "applied_region": applied_region,
                                 "time_range": time_range,
+                                "applied_time_range": applied_time_range,
                                 "source_url": page.url,
                                 "export_file": str(export_file),
                                 "row_count": len(rows),
                                 "scraped_at": _now_utc_iso(),
                                 "include_keyword_applied": include_keyword_applied,
+                                "filter_mismatches": filter_mismatches,
+                            },
+                        )
+                        last_error = None
+                        break
+                    except TrendsNoResultsError as exc:
+                        export_files_by_seed.setdefault(seed_keyword, [])
+                        _write_json(
+                            seed_dir / "trends_skip_metadata.json",
+                            {
+                                "seed_keyword": seed_keyword,
+                                "skip_reason": exc.reason,
+                                "region": region,
+                                "applied_region": applied_region,
+                                "time_range": time_range,
+                                "applied_time_range": applied_time_range,
+                                "source_url": page.url,
+                                "scraped_at": _now_utc_iso(),
+                                "include_keyword_applied": include_keyword_applied,
+                                "filter_mismatches": filter_mismatches,
                             },
                         )
                         last_error = None

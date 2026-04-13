@@ -86,6 +86,23 @@ def _scrape_pinclicks(payload: dict[str, Any]) -> dict[str, Any]:
     return _to_jsonable(result.to_dict())
 
 
+def _bootstrap_pinclicks_session(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate or bootstrap the PinClicks Brave session."""
+    from automating_wf.scrapers.pinclicks import ensure_pinclicks_brave_session
+
+    headed = bool(payload.get("headed", False))
+    allow_manual_setup = bool(payload.get("allow_manual_setup", False))
+    setup_timeout_seconds = int(payload.get("setup_timeout_seconds", 600) or 600)
+
+    with contextlib.redirect_stdout(sys.stderr):
+        result = ensure_pinclicks_brave_session(
+            headed=headed,
+            allow_manual_setup=allow_manual_setup,
+            setup_timeout_seconds=setup_timeout_seconds,
+        )
+    return _to_jsonable(result)
+
+
 def main() -> None:
     """Entry point for scraper subprocess actions."""
     try:
@@ -104,6 +121,10 @@ def main() -> None:
             return
         if action == "scrape_pinclicks":
             data = _scrape_pinclicks(payload)
+            _emit({"ok": True, "data": data})
+            return
+        if action == "bootstrap_pinclicks_session":
+            data = _bootstrap_pinclicks_session(payload)
             _emit({"ok": True, "data": data})
             return
 

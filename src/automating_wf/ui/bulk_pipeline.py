@@ -1091,7 +1091,58 @@ def _render_stage_pinclicks(st: Any) -> None:
         st.session_state.bulk_generation_started = False
         st.session_state.bulk_last_error = None
         st.session_state.bulk_stage = STAGE_GENERATION
+        _run_generation_job(
+            st,
+            opts=opts,
+            winners=st.session_state.bulk_final_winners,
+            run_id=run_id,
+            progress_box=st.empty(),
+            table_box=st.empty(),
+        )
         st.rerun()
+
+
+def _run_generation_job(
+    st: Any,
+    *,
+    opts: EngineRunOptions,
+    winners: list[dict[str, Any]],
+    run_id: str,
+    progress_box: Any,
+    table_box: Any,
+) -> None:
+    """Run Stage 4 immediately and persist progress into session state."""
+    st.session_state.bulk_generation_started = True
+    st.session_state.bulk_generation_progress = []
+
+    def on_progress(current_index: int, total_count: int, article_result: dict[str, Any]) -> None:
+        ratio = 0.0 if total_count <= 0 else float(current_index / total_count)
+        progress_box.progress(min(1.0, max(0.0, ratio)))
+        st.session_state.bulk_generation_progress.append(
+            {
+                "keyword": str(article_result.get("keyword", "")).strip(),
+                "status": str(article_result.get("status", "")).strip(),
+                "title": str(article_result.get("title", "")).strip(),
+                "post_url": str(article_result.get("post_url", "")).strip(),
+                "error": str(article_result.get("error", "")).strip(),
+            }
+        )
+        table_box.dataframe(st.session_state.bulk_generation_progress, width="stretch", hide_index=True)
+
+    try:
+        with st.status("Generating and publishing winners...", expanded=True):
+            result = run_winner_generation_sync(
+                opts=opts,
+                winners=winners,
+                run_id=run_id,
+                on_progress=on_progress,
+            )
+            st.session_state.bulk_generation_results = result
+            st.session_state.bulk_last_error = None
+    except Exception as exc:
+        st.session_state.bulk_last_error = str(exc) or f"{type(exc).__name__}: {exc!r}"
+    finally:
+        st.session_state.bulk_generation_started = False
 
 
 def _render_stage_generation(st: Any) -> None:
@@ -1123,37 +1174,14 @@ def _render_stage_generation(st: Any) -> None:
         and st.session_state.bulk_generation_results is None
         and not st.session_state.bulk_last_error
     ):
-        st.session_state.bulk_generation_started = True
-        st.session_state.bulk_generation_progress = []
-
-        def on_progress(current_index: int, total_count: int, article_result: dict[str, Any]) -> None:
-            ratio = 0.0 if total_count <= 0 else float(current_index / total_count)
-            progress_box.progress(min(1.0, max(0.0, ratio)))
-            st.session_state.bulk_generation_progress.append(
-                {
-                    "keyword": str(article_result.get("keyword", "")).strip(),
-                    "status": str(article_result.get("status", "")).strip(),
-                    "title": str(article_result.get("title", "")).strip(),
-                    "post_url": str(article_result.get("post_url", "")).strip(),
-                    "error": str(article_result.get("error", "")).strip(),
-                }
-            )
-            table_box.dataframe(st.session_state.bulk_generation_progress, width="stretch", hide_index=True)
-
-        with st.status("Generating and publishing winners...", expanded=True):
-            try:
-                result = run_winner_generation_sync(
-                    opts=opts,
-                    winners=winners,
-                    run_id=run_id,
-                    on_progress=on_progress,
-                )
-                st.session_state.bulk_generation_results = result
-                st.session_state.bulk_last_error = None
-            except Exception as exc:
-                st.session_state.bulk_last_error = (
-                    str(exc) or f"{type(exc).__name__}: {exc!r}"
-                )
+        _run_generation_job(
+            st,
+            opts=opts,
+            winners=winners,
+            run_id=run_id,
+            progress_box=progress_box,
+            table_box=table_box,
+        )
 
     if st.session_state.bulk_last_error:
         st.error(st.session_state.bulk_last_error)

@@ -10,6 +10,7 @@ from automating_wf.export.pinterest_csv import (
     ExporterError,
     append_csv_row,
     build_csv_path_for_blog,
+    preview_publish_schedule,
     round_up_to_next_window,
     validate_board_mapping_for_blog,
 )
@@ -121,6 +122,110 @@ class PinterestExporterTests(unittest.TestCase):
             )
             result = append_csv_row(row=row_two, csv_path=csv_path, cadence_minutes=240)
             self.assertEqual(result["publish_date"], "2099-01-01T14:00:00")
+
+    def test_append_csv_row_does_not_reset_existing_schedule_with_initial_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(
+            environ,
+            {"WP_TIMEZONE": "UTC"},
+            clear=False,
+        ):
+            csv_path = Path(tmp_dir) / "pins.csv"
+            row_one = CsvRow(
+                title="Row One",
+                description="Desc",
+                link="https://example.com/one/",
+                image_url="https://example.com/uploads/one.jpg",
+                pinterest_board="Board",
+                publish_date="2099-01-01T10:00:00",
+            )
+            append_csv_row(row=row_one, csv_path=csv_path, cadence_minutes=240)
+
+            row_two = CsvRow(
+                title="Row Two",
+                description="Desc",
+                link="https://example.com/two/",
+                image_url="https://example.com/uploads/two.jpg",
+                pinterest_board="Board",
+                publish_date="",
+            )
+            result = append_csv_row(
+                row=row_two,
+                csv_path=csv_path,
+                cadence_minutes=240,
+                initial_publish_date="2099-01-05 09:30",
+            )
+
+        self.assertEqual(result["publish_date"], "2099-01-01T14:00:00")
+
+    def test_append_csv_row_uses_initial_publish_date_for_empty_csv(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(
+            environ,
+            {"WP_TIMEZONE": "UTC"},
+            clear=False,
+        ):
+            csv_path = Path(tmp_dir) / "pins.csv"
+            row = CsvRow(
+                title="Row One",
+                description="Desc",
+                link="https://example.com/one/",
+                image_url="https://example.com/uploads/one.jpg",
+                pinterest_board="Board",
+                publish_date="",
+            )
+
+            result = append_csv_row(
+                row=row,
+                csv_path=csv_path,
+                cadence_minutes=180,
+                initial_publish_date="2099-01-01 09:30",
+            )
+
+        self.assertEqual(result["publish_date"], "2099-01-01T09:30:00")
+
+    def test_append_csv_row_rejects_past_initial_publish_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(
+            environ,
+            {"WP_TIMEZONE": "UTC"},
+            clear=False,
+        ):
+            csv_path = Path(tmp_dir) / "pins.csv"
+            row = CsvRow(
+                title="Row One",
+                description="Desc",
+                link="https://example.com/one/",
+                image_url="https://example.com/uploads/one.jpg",
+                pinterest_board="Board",
+                publish_date="",
+            )
+
+            with self.assertRaises(ExporterError):
+                append_csv_row(
+                    row=row,
+                    csv_path=csv_path,
+                    cadence_minutes=180,
+                    initial_publish_date="2000-01-01 09:30",
+                )
+
+    def test_preview_publish_schedule_uses_anchor_and_cadence(self) -> None:
+        with patch.dict(
+            environ,
+            {"WP_TIMEZONE": "UTC"},
+            clear=False,
+        ):
+            preview = preview_publish_schedule(
+                first_publish_at="2099-01-01 09:30",
+                cadence_minutes=180,
+                count=3,
+            )
+
+        self.assertEqual(
+            [item["utc"] for item in preview],
+            [
+                "2099-01-01T09:30:00",
+                "2099-01-01T12:30:00",
+                "2099-01-01T15:30:00",
+            ],
+        )
 
     def test_append_csv_row_migrates_legacy_headers_in_place(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(

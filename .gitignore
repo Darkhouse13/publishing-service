@@ -1,5 +1,7 @@
 .env
 tmp/
+.codex/
+*.egg-info/
 __pycache__/
 *.pyc
 *.pyo

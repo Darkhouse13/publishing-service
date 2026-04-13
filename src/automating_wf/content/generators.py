@@ -159,6 +159,7 @@ def derive_focus_keyword(topic: str) -> str:
         "blog",
         "post",
         "please",
+        "recipe",
     }
     sentence_like = bool(re.search(r"[.!?]", raw)) or len(tokens) > 7 or any(
         marker in tokens for marker in instruction_markers
@@ -681,6 +682,7 @@ def generate_article(
     vibe: str,
     blog_profile: str,
     focus_keyword: str | None = None,
+    prompt_type: str = "standard",
 ) -> dict[str, str]:
     """Generate an SEO article payload with strict retries and soft post-processing fixes."""
     load_dotenv()
@@ -731,14 +733,41 @@ def generate_article(
         "11. meta_description: MUST contain the focus keyword. Must be 130–150\n"
         "    characters. Write it as a compelling call-to-action.\n"
         f'12. focus_keyword: Return the EXACT keyword provided: "{resolved_focus_keyword}"\n\n'
-        "IMAGE PROMPTS:\n"
-        "13. hero_image_prompt: A detailed prompt for generating a hero image\n"
-        "    relevant to the article topic. No text in the image.\n"
-        "14. detail_image_prompt: A detailed prompt for a secondary in-article\n"
-        "    image. Include an alt-text suggestion that contains the focus keyword.\n\n"
+    )
+    if prompt_type == "recipe":
+        base_user_prompt += (
+            "RECIPE RULES:\n"
+            "13. The article MUST include the exact recipe for the dish or food item\n"
+            "    described by the topic. Place it under an H2 heading such as\n"
+            "    \"## Recipe\" or \"## How to Make [Dish Name]\".\n"
+            "14. Begin the recipe section with bold metadata lines:\n"
+            "    **Prep Time:** X minutes | **Cook Time:** Y minutes | **Total Time:** Z minutes | **Servings:** N\n"
+            "15. List all ingredients under a **### Ingredients** sub-heading as a\n"
+            "    bulleted markdown list. Include exact measurements.\n"
+            "16. List step-by-step cooking instructions under a **### Instructions**\n"
+            "    sub-heading as a numbered markdown list. Each step should be clear\n"
+            "    and actionable.\n"
+            "17. Optionally include a **### Tips** sub-heading with 2-3 helpful notes\n"
+            "    or variations for the recipe.\n\n"
+            "IMAGE PROMPTS:\n"
+            "18. hero_image_prompt: A detailed prompt for generating an appetizing\n"
+            "    hero image of the finished dish. No text in the image.\n"
+            "19. detail_image_prompt: A detailed prompt for a secondary in-article\n"
+            "    image showing ingredients or a cooking step. Include an alt-text\n"
+            "    suggestion that contains the focus keyword.\n\n"
+        )
+    else:
+        base_user_prompt += (
+            "IMAGE PROMPTS:\n"
+            "13. hero_image_prompt: A detailed prompt for generating a hero image\n"
+            "    relevant to the article topic. No text in the image.\n"
+            "14. detail_image_prompt: A detailed prompt for a secondary in-article\n"
+            "    image. Include an alt-text suggestion that contains the focus keyword.\n\n"
+        )
+    base_user_prompt += (
         "OUTPUT FORMAT:\n"
         "Return ONLY valid JSON. No markdown code fences. No commentary outside\n"
-        "the JSON object. The response must start with {{ and end with }}."
+        "the JSON object. The response must start with { and end with }."
     )
 
     def _request(client: Any, deepseek_model: str, messages: list[dict[str, str]], temperature: float) -> str:

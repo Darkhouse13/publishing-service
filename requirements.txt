@@ -6,5 +6,6 @@ python-dotenv
 markdown
 markdown-it-py
 Pillow
-playwright
+camoufox[geoip]
+nest_asyncio
 openpyxl

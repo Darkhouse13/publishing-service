@@ -76,6 +76,15 @@ SEASONAL_TERMS = {
     "new year",
     "back to school",
 }
+JUNK_TERM_PATTERNS = (
+    "pin by",
+    "select deselect",
+    "select",
+    "deselect",
+    "www",
+    "com",
+    "nescaf",
+)
 
 
 class AnalysisError(RuntimeError):
@@ -143,11 +152,16 @@ def _term_is_valid(term: str) -> bool:
     tokens = term.split()
     if not tokens:
         return False
+    lowered = term.casefold()
+    if any(pattern in lowered for pattern in JUNK_TERM_PATTERNS):
+        return False
     if all(token in STOPWORDS for token in tokens):
         return False
     if len(term) < 3:
         return False
     if len(tokens) == 1 and tokens[0] in STOPWORDS:
+        return False
+    if re.fullmatch(r"(?:www|com|net|org)", lowered):
         return False
     return True
 
