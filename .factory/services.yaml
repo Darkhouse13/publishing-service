@@ -1,8 +1,8 @@
 commands:
   install: cd backend && pip install -e ".[dev]"
-  typecheck: cd backend && mypy app tests
-  test: cd backend && python -m pytest tests/ -v
-  lint: cd backend && ruff check app tests
+  typecheck: cd backend && python3 -m mypy app tests
+  test: cd backend && python3 -m pytest tests/ -v
+  lint: cd backend && python3 -m ruff check app tests
 
 services:
   api:
