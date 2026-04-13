@@ -1,0 +1,19 @@
+commands:
+  install: cd backend && pip install -e ".[dev]"
+  typecheck: cd backend && mypy app tests
+  test: cd backend && python -m pytest tests/ -v
+  lint: cd backend && ruff check app tests
+
+services:
+  api:
+    start: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000
+    stop: lsof -ti :8000 | xargs kill
+    healthcheck: curl -sf http://localhost:8000/api/v1/health
+    port: 8000
+    depends_on: []
+
+  worker:
+    start: cd backend && celery -A app.tasks.celery_app worker --loglevel=info --concurrency=1
+    stop: pkill -f "celery worker"
+    healthcheck: celery -A app.tasks.celery_app inspect ping
+    depends_on: []
