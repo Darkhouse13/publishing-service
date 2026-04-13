@@ -1,0 +1,45 @@
+# Development Docker Compose configuration for Publishing Service
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# This overlay adds:
+#   - Hot-reloading source mounts
+#   - Debug mode
+#   - Exposed infrastructure ports
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      - DEBUG=true
+      - DATABASE_URL=sqlite+aiosqlite:///./dev.db
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./backend/.env:/app/.env:ro
+      - dev-artifacts:/app/artifacts
+    # Override production depends to skip db/redis in dev
+    depends_on: []
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "app.tasks.celery_app", "worker", "--loglevel=debug", "--concurrency=1"]
+    environment:
+      - DEBUG=true
+      - DATABASE_URL=sqlite+aiosqlite:///./dev.db
+      - REDIS_URL=redis://redis:6379/0
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./backend/.env:/app/.env:ro
+    depends_on:
+      - redis
+
+volumes:
+  dev-artifacts:

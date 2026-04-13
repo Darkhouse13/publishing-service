@@ -98,3 +98,9 @@ from app.api.pipeline_configs import router as pipeline_configs_router  # noqa: 
 app.include_router(blogs_router)
 app.include_router(credentials_router)
 app.include_router(pipeline_configs_router)
+
+from app.api.runs import router as runs_router  # noqa: E402
+from app.api.articles import router as articles_router  # noqa: E402
+
+app.include_router(runs_router)
+app.include_router(articles_router)
