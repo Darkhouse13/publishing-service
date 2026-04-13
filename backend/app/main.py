@@ -85,3 +85,12 @@ async def health_check() -> dict[str, Any]:
 
 
 app.include_router(health_router)
+
+
+# ---------------------------------------------------------------------------
+# Domain routers
+# ---------------------------------------------------------------------------
+
+from app.api.blogs import router as blogs_router  # noqa: E402
+
+app.include_router(blogs_router)

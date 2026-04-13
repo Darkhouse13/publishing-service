@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from app.models.base import Base
+from app.models import Base  # noqa: F401 – ensures all model submodules are imported
 
 
 @pytest.fixture(autouse=True)
@@ -71,3 +72,24 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Provide an ``AsyncSession`` backed by an in-memory SQLite database."""
     async with _TestSessionFactory() as session:
         yield session
+
+
+# ---------------------------------------------------------------------------
+# HTTP client fixture with dependency override for test DB
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture()
+async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """Provide an ``AsyncClient`` whose ``get_db`` dependency uses the test DB."""
+    from app.core.database import get_db
+    from app.main import app as _app
+
+    async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        yield db_session
+
+    _app.dependency_overrides[get_db] = _override_get_db
+    transport = ASGITransport(app=_app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        yield c
+    _app.dependency_overrides.clear()

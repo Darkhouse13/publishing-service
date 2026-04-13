@@ -5,5 +5,6 @@ all models via a single import chain.
 """
 
 from app.models.base import Base
+from app.models.blog import Blog  # noqa: F401 – ensure model is registered
 
-__all__ = ["Base"]
+__all__ = ["Base", "Blog"]
