@@ -30,6 +30,8 @@ class BlogService:
     async def create(self, data: BlogCreate) -> Blog:
         """Create a new blog with encrypted credentials.
 
+        Also creates a default PipelineConfig for the blog.
+
         Raises:
             ValueError: If a blog with the same slug already exists.
         """
@@ -52,6 +54,13 @@ class BlogService:
         self._session.add(blog)
         await self._session.flush()
         await self._session.refresh(blog)
+
+        # Auto-create default pipeline config
+        from app.services.pipeline_config import PipelineConfigService
+
+        config_service = PipelineConfigService(self._session)
+        await config_service.create_default(blog.id)
+
         return blog
 
     # ------------------------------------------------------------------
