@@ -15,7 +15,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage startup/shutdown lifecycle."""
     # Ensure runtime directories exist
     os.makedirs(settings.ARTIFACTS_DIR, exist_ok=True)
+
+    # Create all tables (for dev/SQLite).  In production Alembic is used.
+    from app.core.database import engine
+    from app.models import Base
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     yield
+
+    # Dispose of the engine on shutdown
+    from app.core.database import engine as _engine
+
+    await _engine.dispose()
 
 
 app = FastAPI(
@@ -39,9 +52,17 @@ health_router = APIRouter(prefix="/api/v1/health", tags=["health"])
 async def health_check() -> dict[str, Any]:
     """Return overall system health status.
 
-    Fulfils VAL-HEALTH-001, VAL-HEALTH-002, VAL-HEALTH-005.
+    Fulfils VAL-HEALTH-001, VAL-HEALTH-002, VAL-HEALTH-003, VAL-HEALTH-005.
     """
     checks: dict[str, Any] = {}
+
+    # Database connectivity
+    from app.core.database import check_database_connection
+
+    db_connected = await check_database_connection()
+    checks["database"] = {
+        "status": "connected" if db_connected else "disconnected",
+    }
 
     # Infrastructure / workspace directories
     artifacts_exists = os.path.isdir(settings.ARTIFACTS_DIR)
@@ -55,7 +76,7 @@ async def health_check() -> dict[str, Any]:
     }
 
     # Overall status
-    all_ok = artifacts_exists and artifacts_writable
+    all_ok = db_connected and artifacts_exists and artifacts_writable
 
     return {
         "status": "ok" if all_ok else "degraded",
