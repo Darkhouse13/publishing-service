@@ -4,6 +4,8 @@ Fulfils VAL-HEALTH-001 (accessibility), VAL-HEALTH-002 (status JSON),
 and VAL-HEALTH-005 (workspace directories).
 """
 
+from collections.abc import AsyncGenerator
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -21,7 +23,7 @@ def transport(base_url: str) -> ASGITransport:
 
 
 @pytest.fixture
-async def client(transport: ASGITransport, base_url: str) -> AsyncClient:
+async def client(transport: ASGITransport, base_url: str) -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=transport, base_url=base_url) as c:
         yield c
 

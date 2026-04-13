@@ -9,6 +9,7 @@ Verifies:
 
 import pytest
 import pytest_asyncio
+from collections.abc import AsyncGenerator
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,7 +74,7 @@ class TestAsyncSessionInjection:
         return ASGITransport(app=app)
 
     @pytest_asyncio.fixture()
-    async def client(self, transport: ASGITransport, base_url: str) -> AsyncClient:
+    async def client(self, transport: ASGITransport, base_url: str) -> AsyncGenerator[AsyncClient, None]:
         async with AsyncClient(transport=transport, base_url=base_url) as c:
             yield c
 

@@ -24,7 +24,7 @@ from app.core.config import settings
 
 _is_sqlite = settings.DATABASE_URL.startswith("sqlite")
 
-_engine_kwargs: dict = {}
+_engine_kwargs: dict[str, object] = {}
 if _is_sqlite:
     # SQLite needs check_same_thread=False for multi-threaded usage (FastAPI)
     # StaticPool is useful for in-memory SQLite in tests
