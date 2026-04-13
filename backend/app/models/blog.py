@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import JSON, Boolean, DateTime, String, Text, event
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
@@ -105,6 +105,13 @@ class Blog(Base):
         JSON,
         nullable=False,
         default=list,
+    )
+
+    # Relationship to articles
+    articles: Mapped[list["Article"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "Article",
+        back_populates="blog",
+        lazy="selectin",
     )
 
 

@@ -74,3 +74,10 @@ class Run(Base):
         backref="runs",
         lazy="selectin",
     )
+
+    # Relationship to articles
+    articles: Mapped[list["Article"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "Article",
+        back_populates="run",
+        lazy="selectin",
+    )
