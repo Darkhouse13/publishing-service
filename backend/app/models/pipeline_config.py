@@ -31,11 +31,6 @@ class PipelineConfig(Base):
         unique=True,
         nullable=False,
     )
-    articles_per_week: Mapped[int] = mapped_column(
-        Integer,
-        default=5,
-        nullable=False,
-    )
     llm_provider: Mapped[str] = mapped_column(
         String(255),
         default="deepseek",
@@ -46,14 +41,59 @@ class PipelineConfig(Base):
         default="fal",
         nullable=False,
     )
-    content_tone: Mapped[str] = mapped_column(
+    llm_model: Mapped[str] = mapped_column(
         String(255),
-        default="informative",
+        default="deepseek-chat",
         nullable=False,
     )
-    default_category: Mapped[str] = mapped_column(
+    image_model: Mapped[str] = mapped_column(
         String(255),
-        default="",
+        default="fal-ai/flux/dev",
+        nullable=False,
+    )
+    trends_region: Mapped[str] = mapped_column(
+        String(255),
+        default="GLOBAL",
+        nullable=False,
+    )
+    trends_range: Mapped[str] = mapped_column(
+        String(255),
+        default="12m",
+        nullable=False,
+    )
+    trends_top_n: Mapped[int] = mapped_column(
+        Integer,
+        default=20,
+        nullable=False,
+    )
+    pinclicks_max_records: Mapped[int] = mapped_column(
+        Integer,
+        default=25,
+        nullable=False,
+    )
+    winners_count: Mapped[int] = mapped_column(
+        Integer,
+        default=5,
+        nullable=False,
+    )
+    publish_status: Mapped[str] = mapped_column(
+        String(255),
+        default="draft",
+        nullable=False,
+    )
+    csv_cadence_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=240,
+        nullable=False,
+    )
+    pin_template_mode: Mapped[str] = mapped_column(
+        String(255),
+        default="center_strip",
+        nullable=False,
+    )
+    max_concurrent_articles: Mapped[int] = mapped_column(
+        Integer,
+        default=3,
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(

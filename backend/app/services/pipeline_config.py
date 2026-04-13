@@ -13,11 +13,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pipeline_config import PipelineConfig
 from app.schemas.pipeline_config import (
-    DEFAULT_ARTICLES_PER_WEEK,
-    DEFAULT_CATEGORY,
-    DEFAULT_CONTENT_TONE,
+    DEFAULT_CSV_CADENCE_MINUTES,
+    DEFAULT_IMAGE_MODEL,
     DEFAULT_IMAGE_PROVIDER,
+    DEFAULT_LLM_MODEL,
     DEFAULT_LLM_PROVIDER,
+    DEFAULT_MAX_CONCURRENT_ARTICLES,
+    DEFAULT_PIN_TEMPLATE_MODE,
+    DEFAULT_PINCLICKS_MAX_RECORDS,
+    DEFAULT_PUBLISH_STATUS,
+    DEFAULT_TRENDS_RANGE,
+    DEFAULT_TRENDS_REGION,
+    DEFAULT_TRENDS_TOP_N,
+    DEFAULT_WINNERS_COUNT,
     PipelineConfigUpdate,
 )
 
@@ -39,11 +47,19 @@ class PipelineConfigService:
         """
         config = PipelineConfig(
             blog_id=blog_id,
-            articles_per_week=DEFAULT_ARTICLES_PER_WEEK,
             llm_provider=DEFAULT_LLM_PROVIDER,
             image_provider=DEFAULT_IMAGE_PROVIDER,
-            content_tone=DEFAULT_CONTENT_TONE,
-            default_category=DEFAULT_CATEGORY,
+            llm_model=DEFAULT_LLM_MODEL,
+            image_model=DEFAULT_IMAGE_MODEL,
+            trends_region=DEFAULT_TRENDS_REGION,
+            trends_range=DEFAULT_TRENDS_RANGE,
+            trends_top_n=DEFAULT_TRENDS_TOP_N,
+            pinclicks_max_records=DEFAULT_PINCLICKS_MAX_RECORDS,
+            winners_count=DEFAULT_WINNERS_COUNT,
+            publish_status=DEFAULT_PUBLISH_STATUS,
+            csv_cadence_minutes=DEFAULT_CSV_CADENCE_MINUTES,
+            pin_template_mode=DEFAULT_PIN_TEMPLATE_MODE,
+            max_concurrent_articles=DEFAULT_MAX_CONCURRENT_ARTICLES,
         )
         self._session.add(config)
         await self._session.flush()

@@ -1,6 +1,13 @@
 """Tests for PipelineConfig CRUD and blog-creation auto-config.
 
 Fulfils:
+- VAL-PCFG-001: PipelineConfig model removes deprecated columns
+- VAL-PCFG-002: PipelineConfig model adds new columns with correct defaults
+- VAL-PCFG-003: PipelineConfig API GET returns new fields
+- VAL-PCFG-004: PipelineConfig API PUT updates new fields
+- VAL-PCFG-005: PipelineConfig API PUT partial update preserves defaults
+- VAL-PCFG-006: PipelineConfig schema rejects invalid types
+- VAL-PCFG-007: PipelineConfig schema response includes all new fields
 - VAL-PIPE-001: Blog creation triggers default pipeline_config insertion
 - VAL-PIPE-002: GET /api/v1/blogs/{id}/pipeline-config returns blog's config
 - VAL-PIPE-003: PUT /api/v1/blogs/{id}/pipeline-config updates settings
@@ -83,11 +90,19 @@ class TestAutoCreatePipelineConfig:
             select(PipelineConfig).where(PipelineConfig.blog_id == blog_id)
         )
         config = result.scalar_one()
-        assert config.articles_per_week == 5
         assert config.llm_provider == "deepseek"
         assert config.image_provider == "fal"
-        assert config.content_tone == "informative"
-        assert config.default_category == ""
+        assert config.llm_model == "deepseek-chat"
+        assert config.image_model == "fal-ai/flux/dev"
+        assert config.trends_region == "GLOBAL"
+        assert config.trends_range == "12m"
+        assert config.trends_top_n == 20
+        assert config.pinclicks_max_records == 25
+        assert config.winners_count == 5
+        assert config.publish_status == "draft"
+        assert config.csv_cadence_minutes == 240
+        assert config.pin_template_mode == "center_strip"
+        assert config.max_concurrent_articles == 3
 
     @pytest.mark.asyncio
     async def test_default_config_via_get_endpoint(
@@ -102,10 +117,10 @@ class TestAutoCreatePipelineConfig:
         config_response = await client.get(f"/api/v1/blogs/{blog_id}/pipeline-config")
         assert config_response.status_code == 200
         data = config_response.json()
-        assert data["articles_per_week"] == 5
         assert data["llm_provider"] == "deepseek"
         assert data["image_provider"] == "fal"
-        assert data["content_tone"] == "informative"
+        assert data["llm_model"] == "deepseek-chat"
+        assert data["trends_region"] == "GLOBAL"
 
 
 # ---------------------------------------------------------------------------
@@ -149,11 +164,19 @@ class TestGetPipelineConfig:
         expected_fields = {
             "id",
             "blog_id",
-            "articles_per_week",
             "llm_provider",
             "image_provider",
-            "content_tone",
-            "default_category",
+            "llm_model",
+            "image_model",
+            "trends_region",
+            "trends_range",
+            "trends_top_n",
+            "pinclicks_max_records",
+            "winners_count",
+            "publish_status",
+            "csv_cadence_minutes",
+            "pin_template_mode",
+            "max_concurrent_articles",
             "created_at",
             "updated_at",
         }
@@ -187,12 +210,12 @@ class TestUpdatePipelineConfig:
         blog_id = existing_blog["id"]
         response = await client.put(
             f"/api/v1/blogs/{blog_id}/pipeline-config",
-            json={"articles_per_week": 10},
+            json={"llm_model": "gpt-4o"},
         )
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_update_articles_per_week(
+    async def test_update_llm_model(
         self,
         client: AsyncClient,
         existing_blog: dict[str, Any],
@@ -200,10 +223,24 @@ class TestUpdatePipelineConfig:
         blog_id = existing_blog["id"]
         response = await client.put(
             f"/api/v1/blogs/{blog_id}/pipeline-config",
-            json={"articles_per_week": 10},
+            json={"llm_model": "gpt-4o"},
         )
         data = response.json()
-        assert data["articles_per_week"] == 10
+        assert data["llm_model"] == "gpt-4o"
+
+    @pytest.mark.asyncio
+    async def test_update_image_model(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"image_model": "dall-e-3"},
+        )
+        data = response.json()
+        assert data["image_model"] == "dall-e-3"
 
     @pytest.mark.asyncio
     async def test_update_llm_provider(
@@ -234,7 +271,7 @@ class TestUpdatePipelineConfig:
         assert data["image_provider"] == "openai"
 
     @pytest.mark.asyncio
-    async def test_update_content_tone(
+    async def test_update_trends_region(
         self,
         client: AsyncClient,
         existing_blog: dict[str, Any],
@@ -242,13 +279,13 @@ class TestUpdatePipelineConfig:
         blog_id = existing_blog["id"]
         response = await client.put(
             f"/api/v1/blogs/{blog_id}/pipeline-config",
-            json={"content_tone": "casual"},
+            json={"trends_region": "US"},
         )
         data = response.json()
-        assert data["content_tone"] == "casual"
+        assert data["trends_region"] == "US"
 
     @pytest.mark.asyncio
-    async def test_update_default_category(
+    async def test_update_trends_range(
         self,
         client: AsyncClient,
         existing_blog: dict[str, Any],
@@ -256,10 +293,108 @@ class TestUpdatePipelineConfig:
         blog_id = existing_blog["id"]
         response = await client.put(
             f"/api/v1/blogs/{blog_id}/pipeline-config",
-            json={"default_category": "home-decor"},
+            json={"trends_range": "3m"},
         )
         data = response.json()
-        assert data["default_category"] == "home-decor"
+        assert data["trends_range"] == "3m"
+
+    @pytest.mark.asyncio
+    async def test_update_trends_top_n(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"trends_top_n": 50},
+        )
+        data = response.json()
+        assert data["trends_top_n"] == 50
+
+    @pytest.mark.asyncio
+    async def test_update_pinclicks_max_records(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"pinclicks_max_records": 100},
+        )
+        data = response.json()
+        assert data["pinclicks_max_records"] == 100
+
+    @pytest.mark.asyncio
+    async def test_update_winners_count(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"winners_count": 10},
+        )
+        data = response.json()
+        assert data["winners_count"] == 10
+
+    @pytest.mark.asyncio
+    async def test_update_publish_status(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"publish_status": "publish"},
+        )
+        data = response.json()
+        assert data["publish_status"] == "publish"
+
+    @pytest.mark.asyncio
+    async def test_update_csv_cadence_minutes(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"csv_cadence_minutes": 120},
+        )
+        data = response.json()
+        assert data["csv_cadence_minutes"] == 120
+
+    @pytest.mark.asyncio
+    async def test_update_pin_template_mode(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"pin_template_mode": "full_bleed"},
+        )
+        data = response.json()
+        assert data["pin_template_mode"] == "full_bleed"
+
+    @pytest.mark.asyncio
+    async def test_update_max_concurrent_articles(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"max_concurrent_articles": 5},
+        )
+        data = response.json()
+        assert data["max_concurrent_articles"] == 5
 
     @pytest.mark.asyncio
     async def test_update_multiple_fields_at_once(
@@ -271,17 +406,17 @@ class TestUpdatePipelineConfig:
         response = await client.put(
             f"/api/v1/blogs/{blog_id}/pipeline-config",
             json={
-                "articles_per_week": 3,
-                "llm_provider": "openai",
-                "content_tone": "professional",
-                "default_category": "diy",
+                "llm_model": "gpt-4o",
+                "max_concurrent_articles": 5,
+                "trends_region": "US",
+                "publish_status": "publish",
             },
         )
         data = response.json()
-        assert data["articles_per_week"] == 3
-        assert data["llm_provider"] == "openai"
-        assert data["content_tone"] == "professional"
-        assert data["default_category"] == "diy"
+        assert data["llm_model"] == "gpt-4o"
+        assert data["max_concurrent_articles"] == 5
+        assert data["trends_region"] == "US"
+        assert data["publish_status"] == "publish"
 
     @pytest.mark.asyncio
     async def test_update_persists_in_db(
@@ -294,15 +429,15 @@ class TestUpdatePipelineConfig:
         blog_id = uuid.UUID(existing_blog["id"])
         await client.put(
             f"/api/v1/blogs/{blog_id}/pipeline-config",
-            json={"articles_per_week": 7, "content_tone": "witty"},
+            json={"llm_model": "gpt-4o", "winners_count": 8},
         )
 
         result = await db_session.execute(
             select(PipelineConfig).where(PipelineConfig.blog_id == blog_id)
         )
         config = result.scalar_one()
-        assert config.articles_per_week == 7
-        assert config.content_tone == "witty"
+        assert config.llm_model == "gpt-4o"
+        assert config.winners_count == 8
 
     @pytest.mark.asyncio
     async def test_update_pipeline_config_nonexistent_blog_returns_404(
@@ -311,21 +446,35 @@ class TestUpdatePipelineConfig:
     ) -> None:
         response = await client.put(
             "/api/v1/blogs/00000000-0000-0000-0000-000000000000/pipeline-config",
-            json={"articles_per_week": 10},
+            json={"llm_model": "gpt-4o"},
         )
         assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_update_pipeline_config_invalid_articles_per_week_returns_422(
+    async def test_update_pipeline_config_invalid_trends_top_n_returns_422(
         self,
         client: AsyncClient,
         existing_blog: dict[str, Any],
     ) -> None:
-        """articles_per_week must be >= 1."""
+        """trends_top_n must be an integer."""
         blog_id = existing_blog["id"]
         response = await client.put(
             f"/api/v1/blogs/{blog_id}/pipeline-config",
-            json={"articles_per_week": 0},
+            json={"trends_top_n": "not_an_int"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_update_pipeline_config_invalid_trends_top_n_zero_returns_422(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        """trends_top_n must be >= 1."""
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"trends_top_n": 0},
         )
         assert response.status_code == 422
 
@@ -361,7 +510,7 @@ class TestUpdatePipelineConfig:
 
         update_response = await client.put(
             f"/api/v1/blogs/{blog_id}/pipeline-config",
-            json={"articles_per_week": 7},
+            json={"llm_model": "gpt-4o"},
         )
         data = update_response.json()
         assert data["updated_at"] != original_updated_at
@@ -378,13 +527,327 @@ class TestUpdatePipelineConfig:
         # Update just one field
         await client.put(
             f"/api/v1/blogs/{blog_id}/pipeline-config",
-            json={"articles_per_week": 3},
+            json={"trends_region": "US"},
         )
 
         # Verify other fields are unchanged
         response = await client.get(f"/api/v1/blogs/{blog_id}/pipeline-config")
         data = response.json()
-        assert data["articles_per_week"] == 3
+        assert data["trends_region"] == "US"
         assert data["llm_provider"] == "deepseek"  # unchanged
         assert data["image_provider"] == "fal"  # unchanged
-        assert data["content_tone"] == "informative"  # unchanged
+        assert data["llm_model"] == "deepseek-chat"  # unchanged
+        assert data["image_model"] == "fal-ai/flux/dev"  # unchanged
+        assert data["trends_range"] == "12m"  # unchanged
+        assert data["trends_top_n"] == 20  # unchanged
+        assert data["pinclicks_max_records"] == 25  # unchanged
+        assert data["winners_count"] == 5  # unchanged
+        assert data["publish_status"] == "draft"  # unchanged
+        assert data["csv_cadence_minutes"] == 240  # unchanged
+        assert data["pin_template_mode"] == "center_strip"  # unchanged
+        assert data["max_concurrent_articles"] == 3  # unchanged
+
+
+# ---------------------------------------------------------------------------
+# VAL-PCFG-001: PipelineConfig model removes deprecated columns
+# ---------------------------------------------------------------------------
+
+
+class TestDeprecatedColumnsRemoved:
+    """Verify that deprecated columns no longer exist on the model."""
+
+    @pytest.mark.asyncio
+    async def test_articles_per_week_column_removed(self) -> None:
+        """articles_per_week should not exist on PipelineConfig."""
+        assert "articles_per_week" not in PipelineConfig.__table__.columns
+
+    @pytest.mark.asyncio
+    async def test_content_tone_column_removed(self) -> None:
+        """content_tone should not exist on PipelineConfig."""
+        assert "content_tone" not in PipelineConfig.__table__.columns
+
+    @pytest.mark.asyncio
+    async def test_default_category_column_removed(self) -> None:
+        """default_category should not exist on PipelineConfig."""
+        assert "default_category" not in PipelineConfig.__table__.columns
+
+
+# ---------------------------------------------------------------------------
+# VAL-PCFG-002: PipelineConfig model adds new columns with correct defaults
+# ---------------------------------------------------------------------------
+
+
+class TestNewColumnsWithDefaults:
+    """Verify all 11 new columns exist with correct types and defaults."""
+
+    @pytest.mark.asyncio
+    async def test_llm_model_column_exists_with_default(self) -> None:
+        col = PipelineConfig.__table__.columns["llm_model"]
+        assert col is not None
+        assert col.default.arg == "deepseek-chat"
+
+    @pytest.mark.asyncio
+    async def test_image_model_column_exists_with_default(self) -> None:
+        col = PipelineConfig.__table__.columns["image_model"]
+        assert col is not None
+        assert col.default.arg == "fal-ai/flux/dev"
+
+    @pytest.mark.asyncio
+    async def test_trends_region_column_exists_with_default(self) -> None:
+        col = PipelineConfig.__table__.columns["trends_region"]
+        assert col is not None
+        assert col.default.arg == "GLOBAL"
+
+    @pytest.mark.asyncio
+    async def test_trends_range_column_exists_with_default(self) -> None:
+        col = PipelineConfig.__table__.columns["trends_range"]
+        assert col is not None
+        assert col.default.arg == "12m"
+
+    @pytest.mark.asyncio
+    async def test_trends_top_n_column_exists_with_default(self) -> None:
+        from sqlalchemy import Integer as SaInteger
+
+        col = PipelineConfig.__table__.columns["trends_top_n"]
+        assert col is not None
+        assert isinstance(col.type, SaInteger)
+        assert col.default.arg == 20
+
+    @pytest.mark.asyncio
+    async def test_pinclicks_max_records_column_exists_with_default(self) -> None:
+        from sqlalchemy import Integer as SaInteger
+
+        col = PipelineConfig.__table__.columns["pinclicks_max_records"]
+        assert col is not None
+        assert isinstance(col.type, SaInteger)
+        assert col.default.arg == 25
+
+    @pytest.mark.asyncio
+    async def test_winners_count_column_exists_with_default(self) -> None:
+        from sqlalchemy import Integer as SaInteger
+
+        col = PipelineConfig.__table__.columns["winners_count"]
+        assert col is not None
+        assert isinstance(col.type, SaInteger)
+        assert col.default.arg == 5
+
+    @pytest.mark.asyncio
+    async def test_publish_status_column_exists_with_default(self) -> None:
+        col = PipelineConfig.__table__.columns["publish_status"]
+        assert col is not None
+        assert col.default.arg == "draft"
+
+    @pytest.mark.asyncio
+    async def test_csv_cadence_minutes_column_exists_with_default(self) -> None:
+        from sqlalchemy import Integer as SaInteger
+
+        col = PipelineConfig.__table__.columns["csv_cadence_minutes"]
+        assert col is not None
+        assert isinstance(col.type, SaInteger)
+        assert col.default.arg == 240
+
+    @pytest.mark.asyncio
+    async def test_pin_template_mode_column_exists_with_default(self) -> None:
+        col = PipelineConfig.__table__.columns["pin_template_mode"]
+        assert col is not None
+        assert col.default.arg == "center_strip"
+
+    @pytest.mark.asyncio
+    async def test_max_concurrent_articles_column_exists_with_default(self) -> None:
+        from sqlalchemy import Integer as SaInteger
+
+        col = PipelineConfig.__table__.columns["max_concurrent_articles"]
+        assert col is not None
+        assert isinstance(col.type, SaInteger)
+        assert col.default.arg == 3
+
+
+# ---------------------------------------------------------------------------
+# VAL-PCFG-003: PipelineConfig API GET returns new fields (with defaults)
+# ---------------------------------------------------------------------------
+
+
+class TestGetReturnsNewFields:
+    """GET endpoint returns all 11 new fields with default values."""
+
+    @pytest.mark.asyncio
+    async def test_get_returns_all_new_fields_with_defaults(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.get(f"/api/v1/blogs/{blog_id}/pipeline-config")
+        data = response.json()
+
+        assert data["llm_model"] == "deepseek-chat"
+        assert data["image_model"] == "fal-ai/flux/dev"
+        assert data["trends_region"] == "GLOBAL"
+        assert data["trends_range"] == "12m"
+        assert data["trends_top_n"] == 20
+        assert data["pinclicks_max_records"] == 25
+        assert data["winners_count"] == 5
+        assert data["publish_status"] == "draft"
+        assert data["csv_cadence_minutes"] == 240
+        assert data["pin_template_mode"] == "center_strip"
+        assert data["max_concurrent_articles"] == 3
+
+
+# ---------------------------------------------------------------------------
+# VAL-PCFG-004: PipelineConfig API PUT updates new fields
+# ---------------------------------------------------------------------------
+
+
+class TestPutUpdatesNewFields:
+    """PUT endpoint can update new fields."""
+
+    @pytest.mark.asyncio
+    async def test_put_updates_llm_model_and_max_concurrent(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"llm_model": "gpt-4o", "max_concurrent_articles": 5},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["llm_model"] == "gpt-4o"
+        assert data["max_concurrent_articles"] == 5
+        # Other fields should remain at defaults
+        assert data["trends_region"] == "GLOBAL"
+
+
+# ---------------------------------------------------------------------------
+# VAL-PCFG-005: PipelineConfig API PUT partial update preserves defaults
+# ---------------------------------------------------------------------------
+
+
+class TestPartialUpdatePreservesDefaults:
+    """Updating only one field leaves all other new fields at defaults."""
+
+    @pytest.mark.asyncio
+    async def test_partial_update_preserves_defaults(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"trends_region": "US"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # Only trends_region changed
+        assert data["trends_region"] == "US"
+        # All other new fields should be at their defaults
+        assert data["llm_model"] == "deepseek-chat"
+        assert data["image_model"] == "fal-ai/flux/dev"
+        assert data["trends_range"] == "12m"
+        assert data["trends_top_n"] == 20
+        assert data["pinclicks_max_records"] == 25
+        assert data["winners_count"] == 5
+        assert data["publish_status"] == "draft"
+        assert data["csv_cadence_minutes"] == 240
+        assert data["pin_template_mode"] == "center_strip"
+        assert data["max_concurrent_articles"] == 3
+
+
+# ---------------------------------------------------------------------------
+# VAL-PCFG-006: PipelineConfig schema rejects invalid types
+# ---------------------------------------------------------------------------
+
+
+class TestSchemaRejectsInvalidTypes:
+    """Schema rejects invalid types with 422."""
+
+    @pytest.mark.asyncio
+    async def test_reject_string_for_trends_top_n(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"trends_top_n": "not_an_int"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_reject_string_for_winners_count(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"winners_count": "not_an_int"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_reject_string_for_csv_cadence_minutes(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"csv_cadence_minutes": "not_an_int"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_reject_string_for_max_concurrent_articles(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.put(
+            f"/api/v1/blogs/{blog_id}/pipeline-config",
+            json={"max_concurrent_articles": "not_an_int"},
+        )
+        assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# VAL-PCFG-007: PipelineConfig schema response includes all new fields
+# ---------------------------------------------------------------------------
+
+
+class TestResponseIncludesAllFields:
+    """PipelineConfigResponse serialises all new fields."""
+
+    @pytest.mark.asyncio
+    async def test_response_model_dump_contains_all_keys(
+        self,
+        client: AsyncClient,
+        existing_blog: dict[str, Any],
+    ) -> None:
+        blog_id = existing_blog["id"]
+        response = await client.get(f"/api/v1/blogs/{blog_id}/pipeline-config")
+        data = response.json()
+
+        new_fields = [
+            "llm_model",
+            "image_model",
+            "trends_region",
+            "trends_range",
+            "trends_top_n",
+            "pinclicks_max_records",
+            "winners_count",
+            "publish_status",
+            "csv_cadence_minutes",
+            "pin_template_mode",
+            "max_concurrent_articles",
+        ]
+        for field in new_fields:
+            assert field in data, f"Field '{field}' missing from response"
