@@ -1,66 +1,85 @@
-"""Placeholder task stubs for pipeline operations.
+"""Celery tasks for pipeline operations.
 
-This module defines Celery task stubs for the two core pipeline operations:
+This module defines Celery tasks for the two core pipeline operations:
 
-- ``run_bulk_pipeline`` – orchestrates the full bulk content generation run.
-- ``generate_single_article`` – generates a single article for a given keyword.
+- ``run_bulk_pipeline_task`` – orchestrates the full bulk content generation run.
+- ``generate_single_article_task`` – generates a single article.
 
-Both tasks currently raise :exc:`NotImplementedError` so they can be
-registered and discovered by Celery while the actual pipeline logic is
-being developed in a later milestone.
+Each task is a **synchronous** entry point that creates its own event loop
+via :func:`asyncio.run` and its own database session.  The actual pipeline
+logic lives in the async functions under :mod:`app.pipeline`.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import uuid
+
 from app.tasks.celery_app import celery
+
+logger = logging.getLogger(__name__)
 
 
 @celery.task(  # type: ignore[untyped-decorator]
     name="app.tasks.pipeline.run_bulk_pipeline",
     bind=True,
 )
-def run_bulk_pipeline(self: object, **kwargs: object) -> None:  # noqa: ARG001
-    """Execute the full bulk pipeline for a blog.
+def run_bulk_pipeline_task(
+    self: object,  # noqa: ARG001
+    run_id: str,
+) -> None:
+    """Execute the full bulk pipeline for a run.
 
-    This is a placeholder task stub.  It will be replaced with the actual
-    orchestration logic that drives scraping, keyword selection, article
-    generation, image creation, and WordPress publishing.
+    This is a synchronous Celery task entry point.  It wraps the async
+    :func:`app.pipeline.bulk_pipeline.run_bulk_pipeline` in
+    :func:`asyncio.run` so that it can be executed by Celery workers.
 
-    Parameters
-    ----------
-    self:
-        Celery ``self`` reference when ``bind=True``.
-    **kwargs:
-        Reserved for future arguments (e.g. ``blog_id``, run options).
+    The task creates its own event loop and database session, ensuring
+    isolation from the caller's async context.
 
-    Raises
-    ------
-    NotImplementedError
-        Always raised until the real implementation is provided.
+    Args:
+        self: Celery ``self`` reference when ``bind=True``.
+        run_id: The UUID string of the run to process.
     """
-    raise NotImplementedError("run_bulk_pipeline is not yet implemented")
+    from app.pipeline.bulk_pipeline import run_bulk_pipeline
+
+    run_uuid = uuid.UUID(run_id)
+    logger.info("Celery task run_bulk_pipeline_task started for run_id=%s", run_id)
+    asyncio.run(run_bulk_pipeline(run_uuid))
+    logger.info("Celery task run_bulk_pipeline_task completed for run_id=%s", run_id)
 
 
 @celery.task(  # type: ignore[untyped-decorator]
     name="app.tasks.pipeline.generate_single_article",
     bind=True,
 )
-def generate_single_article(self: object, **kwargs: object) -> None:  # noqa: ARG001
-    """Generate a single article for a specific keyword and blog.
+def generate_single_article_task(
+    self: object,  # noqa: ARG001
+    article_id: str,
+) -> None:
+    """Generate a single article.
 
-    This is a placeholder task stub.  It will be replaced with the actual
-    logic that generates an article via the configured LLM provider.
+    This is a synchronous Celery task entry point.  It wraps the async
+    :func:`app.pipeline.single_article.generate_single_article` in
+    :func:`asyncio.run` so that it can be executed by Celery workers.
 
-    Parameters
-    ----------
-    self:
-        Celery ``self`` reference when ``bind=True``.
-    **kwargs:
-        Reserved for future arguments (e.g. ``blog_id``, ``keyword``).
+    The task creates its own event loop and database session, ensuring
+    isolation from the caller's async context.
 
-    Raises
-    ------
-    NotImplementedError
-        Always raised until the real implementation is provided.
+    Args:
+        self: Celery ``self`` reference when ``bind=True``.
+        article_id: The UUID string of the article to process.
     """
-    raise NotImplementedError("generate_single_article is not yet implemented")
+    from app.pipeline.single_article import generate_single_article
+
+    article_uuid = uuid.UUID(article_id)
+    logger.info(
+        "Celery task generate_single_article_task started for article_id=%s",
+        article_id,
+    )
+    asyncio.run(generate_single_article(article_uuid))
+    logger.info(
+        "Celery task generate_single_article_task completed for article_id=%s",
+        article_id,
+    )
