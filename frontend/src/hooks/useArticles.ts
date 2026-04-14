@@ -34,6 +34,32 @@ export function useArticles(fallback?: Article[]) {
   };
 }
 
+export function useRunArticles(runId: string | null) {
+  // Build fallback: mock articles filtered by run_id
+  const fallbackData = runId
+    ? mockArticles.filter((a) => a.run_id === runId)
+    : [];
+
+  const { data, error, isLoading, mutate } = useSWR<Article[]>(
+    runId ? `/articles?run_id=${runId}` : null,
+    () =>
+      runId
+        ? articlesApi.list({ run_id: runId })
+        : Promise.resolve([]),
+    {
+      fallbackData,
+      revalidateOnFocus: false,
+    },
+  );
+
+  return {
+    articles: data ?? [],
+    error,
+    isLoading,
+    mutate,
+  };
+}
+
 export function useArticle(id: string | null) {
   const { data, error, isLoading, mutate } = useSWR<Article>(
     id ? `/articles/${id}` : null,

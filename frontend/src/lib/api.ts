@@ -160,10 +160,11 @@ export const runsApi = {
 // ---------------------------------------------------------------------------
 
 export const articlesApi = {
-  list(params?: { blog_id?: string; status?: string }): Promise<Article[]> {
+  list(params?: { blog_id?: string; status?: string; run_id?: string }): Promise<Article[]> {
     const searchParams = new URLSearchParams();
     if (params?.blog_id) searchParams.set('blog_id', params.blog_id);
     if (params?.status) searchParams.set('status', params.status);
+    if (params?.run_id) searchParams.set('run_id', params.run_id);
     const query = searchParams.toString();
     return fetchAPI<Article[]>(`/articles${query ? `?${query}` : ''}`);
   },

@@ -42,12 +42,20 @@ export function useRuns(fallback?: Run[]) {
 }
 
 export function useRun(id: string | null) {
+  const fallbackRun = useMemo(
+    () => (id ? mockRuns.find((r) => r.id === id) ?? undefined : undefined),
+    [id],
+  );
+
   const { data, error, isLoading, mutate } = useSWR<Run>(
     id ? `/runs/${id}` : null,
     () => (id ? runsApi.get(id) : Promise.resolve(null as unknown as Run)),
     {
+      fallbackData: fallbackRun,
       revalidateOnFocus: false,
-      refreshInterval: 3000,
+      // Poll every 3s only while status is generating/pending/running; stop on completed/failed
+      refreshInterval: (data) =>
+        data && ACTIVE_STATUSES.has(data.status) ? 3000 : 0,
     },
   );
 
