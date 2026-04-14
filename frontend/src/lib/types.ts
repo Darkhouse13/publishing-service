@@ -42,6 +42,7 @@ export interface BlogUpdate {
   url?: string;
   wp_username?: string;
   wp_application_password?: string;
+  is_active?: boolean;
   profile_prompt?: string;
   fallback_category?: string;
   deprioritized_category?: string;

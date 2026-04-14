@@ -99,6 +99,13 @@ export const blogsApi = {
     });
   },
 
+  patch(id: string, data: Partial<BlogUpdate>): Promise<Blog> {
+    return fetchAPI<Blog>(`/blogs/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
   delete(id: string): Promise<void> {
     return fetchAPI<void>(`/blogs/${id}`, {
       method: 'DELETE',
