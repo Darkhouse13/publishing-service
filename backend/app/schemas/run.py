@@ -4,7 +4,24 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+
+
+class RunCreate(BaseModel):
+    """Schema for creating a new run.
+
+    Requires a valid ``blog_id`` and a non-empty ``keywords`` list.
+    """
+
+    blog_id: uuid.UUID
+    keywords: list[str] = Field(..., min_length=1)
+
+    @field_validator("keywords")
+    @classmethod
+    def keywords_must_not_be_empty(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("keywords must not be empty")
+        return v
 
 
 class RunResponse(BaseModel):

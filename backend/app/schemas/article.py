@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class ArticleCreate(BaseModel):
+    """Schema for creating a new article.
+
+    Requires a valid ``blog_id`` and a ``topic`` string.
+    """
+
+    blog_id: uuid.UUID
+    topic: str = Field(..., min_length=1)
 
 
 class ArticleResponse(BaseModel):
