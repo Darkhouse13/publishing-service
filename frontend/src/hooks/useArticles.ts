@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import { articlesApi } from '@/lib/api';
 import type { Article, ArticleCreate } from '@/lib/types';
@@ -61,10 +61,17 @@ export function useRunArticles(runId: string | null) {
 }
 
 export function useArticle(id: string | null) {
+  // Build fallback: find matching mock article by ID
+  const fallbackArticle = useMemo(
+    () => (id ? mockArticles.find((a) => a.id === id) ?? undefined : undefined),
+    [id],
+  );
+
   const { data, error, isLoading, mutate } = useSWR<Article>(
     id ? `/articles/${id}` : null,
     () => (id ? articlesApi.get(id) : Promise.resolve(null as unknown as Article)),
     {
+      fallbackData: fallbackArticle,
       revalidateOnFocus: false,
     },
   );
