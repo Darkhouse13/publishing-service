@@ -26,7 +26,6 @@ import csv
 import inspect
 import json
 import logging
-import os
 import re
 import uuid
 from contextlib import asynccontextmanager
@@ -813,8 +812,6 @@ class TestCross008ConfigSnapshotIndependent:
         original_snapshot = dict(run_resp.json()["config_snapshot"])
 
         # Now update the PipelineConfig
-        from app.core.config import settings
-        from app.services.pipeline_config import PipelineConfigService
         # We need to get the config and update it via the API
         config_resp = await client.get(f"/api/v1/blogs/{blog_id}/pipeline-config")
         assert config_resp.status_code == 200
@@ -991,7 +988,7 @@ class TestNFR001NoGetenvOrLoadDotenv:
                     matches.append(f"{py_file.relative_to(backend_app_dir)}:{line_num}: {line.strip()}")
 
         assert matches == [], (
-            f"Found os.getenv() or load_dotenv() calls in backend/app/:\n"
+            "Found os.getenv() or load_dotenv() calls in backend/app/:\n"
             + "\n".join(matches)
         )
 

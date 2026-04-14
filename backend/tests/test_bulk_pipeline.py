@@ -42,7 +42,6 @@ from app.providers.base import (
 )
 from tests.helpers import (
     MockImageProvider,
-    MockLLMProvider,
     MockWordPressProvider,
 )
 
