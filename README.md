@@ -127,6 +127,75 @@ See `.env.example` for the full list. Key groups:
 
 Artifact base paths can be overridden via environment variables (see `src/automating_wf/config/paths.py`).
 
+## Frontend Dashboard (Next.js 14)
+
+A neo-brutalist web dashboard for monitoring and managing the publishing pipeline.
+
+### Tech Stack
+
+- **Framework:** Next.js 14 (App Router, TypeScript strict mode)
+- **Styling:** Tailwind CSS 3 with custom design tokens
+- **Data Fetching:** SWR with inline mock data fallback for development
+- **Design:** Neo-brutalist (3px black borders, zero border-radius, yellow accent #ffcc00, uppercase typography, grid-pattern backgrounds)
+
+### Frontend Setup
+
+```bash
+cd frontend
+npm install
+npm run dev    # Development server on http://localhost:3000
+npm run build  # Production build
+npm run lint  # ESLint check
+```
+
+### Dashboard Pages
+
+| Route | Description |
+|-------|-------------|
+| `/dashboard` | Overview: 3 stat cards (blogs, articles this week, active runs) + recent activity |
+| `/connections` | Blog connections grid with toggle switches |
+| `/connections/new` | Add new blog connection form |
+| `/connections/[id]` | Blog settings with 5 tabs (Connection, AI Personality, Categories, Pinterest, Pipeline) |
+| `/credentials` | API key management table with masked secrets |
+| `/runs` | Generation runs table with status filtering and live polling |
+| `/runs/new` | Start a new generation run |
+| `/runs/[id]` | Run detail with progress ring and article cards |
+| `/articles` | All articles table |
+| `/articles/new` | Create article with vibe selection and live progress |
+| `/articles/[id]` | Article detail with SEO sidebar and Pinterest preview |
+
+### Design Tokens
+
+```js
+// tailwind.config.ts
+colors: {
+  panel:    '#f2f1eb',   // page background
+  white:    '#ffffff',   // card/panel backgrounds
+  black:    '#000000',   // borders, text
+  accent:   '#ffcc00',   // highlights, active states
+  error:    '#ff4444',   // error states
+  muted:    '#888888',   // secondary text
+}
+borderWidth: { DEFAULT: '1px', '2': '2px', '3': '3px' }
+borderRadius: { NONE: '0' }  // zero border-radius everywhere
+shadow: {
+  solid:      '3px 3px 0px #000000',
+  'solid-lg': '5px 5px 0px #000000',
+  'accent':   '3px 3px 0px #ffcc00',
+}
+```
+
+### API Proxy
+
+The frontend proxies API requests through Next.js rewrites to avoid CORS:
+
+```js
+// next.config.js rewrites
+'/api/:path*' → 'http://localhost:8000/api/:path*'
+```
+
+For development without the backend running, all SWR hooks include `fallbackData` with realistic mock data.
+
 ## Troubleshooting
 
 ### Streamlit shutdown traceback on Windows
