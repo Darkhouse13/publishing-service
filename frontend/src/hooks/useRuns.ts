@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import { runsApi } from '@/lib/api';
 import type { Run, RunCreate } from '@/lib/types';
@@ -15,7 +15,7 @@ export function useRuns(fallback?: Run[]) {
     {
       fallbackData: fallback ?? mockRuns,
       revalidateOnFocus: false,
-      refreshInterval: 3000,
+      refreshInterval: 5000,
     },
   );
 
