@@ -3,7 +3,7 @@
 import { useCallback } from 'react';
 import useSWR from 'swr';
 import { blogsApi } from '@/lib/api';
-import type { Blog } from '@/lib/types';
+import type { Blog, BlogCreate, BlogUpdate } from '@/lib/types';
 import { mockBlogs } from '@/lib/mock-data';
 
 export function useBlogs(fallback?: Blog[]) {
@@ -13,7 +13,29 @@ export function useBlogs(fallback?: Blog[]) {
     {
       fallbackData: fallback ?? mockBlogs,
       revalidateOnFocus: false,
-    }
+    },
+  );
+
+  const createBlog = useCallback(
+    async (blogData: BlogCreate) => {
+      const newBlog = await blogsApi.create(blogData);
+      await mutate((current) => [...(current ?? []), newBlog], false);
+      return newBlog;
+    },
+    [mutate],
+  );
+
+  const updateBlog = useCallback(
+    async (id: string, blogData: BlogUpdate) => {
+      const updatedBlog = await blogsApi.update(id, blogData);
+      await mutate(
+        (current) =>
+          current?.map((b) => (b.id === id ? updatedBlog : b)),
+        false,
+      );
+      return updatedBlog;
+    },
+    [mutate],
   );
 
   const toggleBlog = useCallback(
@@ -22,7 +44,7 @@ export function useBlogs(fallback?: Blog[]) {
       await mutate(
         (current) =>
           current?.map((b) =>
-            b.id === id ? { ...b, is_active: isActive } : b
+            b.id === id ? { ...b, is_active: isActive } : b,
           ),
         false,
       );
@@ -42,6 +64,8 @@ export function useBlogs(fallback?: Blog[]) {
     error,
     isLoading,
     mutate,
+    createBlog,
+    updateBlog,
     toggleBlog,
   };
 }
@@ -52,7 +76,7 @@ export function useBlog(id: string | null) {
     () => (id ? blogsApi.get(id) : Promise.resolve(null as unknown as Blog)),
     {
       revalidateOnFocus: false,
-    }
+    },
   );
 
   return {

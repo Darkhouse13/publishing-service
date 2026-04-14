@@ -1,8 +1,9 @@
 'use client';
 
+import { useCallback } from 'react';
 import useSWR from 'swr';
 import { articlesApi } from '@/lib/api';
-import type { Article } from '@/lib/types';
+import type { Article, ArticleCreate } from '@/lib/types';
 import { mockArticles } from '@/lib/mock-data';
 
 export function useArticles(fallback?: Article[]) {
@@ -12,7 +13,16 @@ export function useArticles(fallback?: Article[]) {
     {
       fallbackData: fallback ?? mockArticles,
       revalidateOnFocus: false,
-    }
+    },
+  );
+
+  const createArticle = useCallback(
+    async (articleData: ArticleCreate) => {
+      const newArticle = await articlesApi.create(articleData);
+      await mutate((current) => [...(current ?? []), newArticle], false);
+      return newArticle;
+    },
+    [mutate],
   );
 
   return {
@@ -20,6 +30,7 @@ export function useArticles(fallback?: Article[]) {
     error,
     isLoading,
     mutate,
+    createArticle,
   };
 }
 
@@ -29,7 +40,7 @@ export function useArticle(id: string | null) {
     () => (id ? articlesApi.get(id) : Promise.resolve(null as unknown as Article)),
     {
       revalidateOnFocus: false,
-    }
+    },
   );
 
   return {
