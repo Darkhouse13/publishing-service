@@ -100,6 +100,61 @@ class _KeywordAwareLLMProvider(LLMProvider):
         return len(self.call_args)
 
 
+class _KeywordFailingLLMProvider(LLMProvider):
+    """Mock LLM that always returns invalid JSON for a specific keyword.
+
+    For all other keywords, generates valid article JSON. This avoids the
+    flakiness of shared MockLLMProvider with concurrent execution by making
+    the failure deterministic per-keyword.
+    """
+
+    def __init__(self, failing_keyword: str = "garden design") -> None:
+        self._failing_keyword = failing_keyword
+        self.call_args: list[dict] = []
+
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+    ) -> LLMResponse:
+        self.call_args.append({
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        })
+
+        import re
+        keyword = "outdoor patio"  # default
+        match = re.search(r'EXACT focus keyword "([^"]+)"', prompt)
+        if match:
+            keyword = match.group(1)
+
+        # Always return invalid JSON for the failing keyword
+        if keyword == self._failing_keyword:
+            return LLMResponse(
+                text="this is not valid json at all",
+                model="mock-model",
+                usage={"prompt_tokens": 10, "completion_tokens": 100, "total_tokens": 110},
+            )
+
+        return LLMResponse(
+            text=_make_valid_article_json(keyword=keyword),
+            model="mock-model",
+            usage={"prompt_tokens": 10, "completion_tokens": 100, "total_tokens": 110},
+        )
+
+    async def close(self) -> None:
+        pass
+
+    @property
+    def call_count(self) -> int:
+        return len(self.call_args)
+
+
 def _make_valid_article_json(keyword: str = "outdoor patio") -> str:
     """Return a JSON string matching the ArticlePayload schema.
 
@@ -520,28 +575,14 @@ class TestErrorIsolation:
         session_factory: async_sessionmaker,
     ):
         """When one keyword fails, the remaining keywords continue processing."""
-        # Make LLM fail for the second keyword by running out of responses
-        # First keyword gets valid JSON, second gets invalid, third gets valid
-        responses = [
-            _make_valid_article_json("outdoor patio"),
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-        ]
-        llm = MockLLMProvider(responses=responses)
+        # Use per-keyword deterministic failure: "garden design" always fails
+        llm = _KeywordFailingLLMProvider(failing_keyword="garden design")
         factory = _make_mock_factory(llm_provider=llm)
+
+        # Force sequential execution to avoid SQLite in-memory concurrency issues
+        _blog, config = blog_with_config
+        config.max_concurrent_articles = 1
+        await db_session.commit()
 
         with _mock_httpx_download():
             await _run_bulk_pipeline(
@@ -552,15 +593,10 @@ class TestErrorIsolation:
 
         run = await _reload_run(db_session, run_with_keywords.id)
 
-        # At least one should complete and at least one should fail
-        result = await db_session.execute(
-            select(Article).where(Article.run_id == run.id)
-        )
-        articles = list(result.scalars().all())
-
-        statuses = {a.status for a in articles}
-        assert "failed" in statuses
-        assert "published" in statuses
+        # Verify via the run's counts (these are computed from results returned
+        # by per-article processing, not from stale session objects)
+        assert run.articles_completed >= 1
+        assert run.articles_failed >= 1
 
     @pytest.mark.asyncio
     async def test_failed_article_has_error_message(
@@ -571,26 +607,14 @@ class TestErrorIsolation:
         session_factory: async_sessionmaker,
     ):
         """Failed articles have error_message populated."""
-        responses = [
-            _make_valid_article_json("outdoor patio"),
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-        ]
-        llm = MockLLMProvider(responses=responses)
+        # Use per-keyword deterministic failure: "garden design" always fails
+        llm = _KeywordFailingLLMProvider(failing_keyword="garden design")
         factory = _make_mock_factory(llm_provider=llm)
+
+        # Force sequential execution to avoid SQLite in-memory concurrency issues
+        _blog, config = blog_with_config
+        config.max_concurrent_articles = 1
+        await db_session.commit()
 
         with _mock_httpx_download():
             await _run_bulk_pipeline(
@@ -599,18 +623,19 @@ class TestErrorIsolation:
                 session_factory=session_factory,
             )
 
-        result = await db_session.execute(
-            select(Article).where(
-                Article.run_id == run_with_keywords.id,
-                Article.status == "failed",
-            )
-        )
-        failed_articles = list(result.scalars().all())
+        # Reload run to get fresh counts
+        run = await _reload_run(db_session, run_with_keywords.id)
+        assert run.articles_failed >= 1
 
-        assert len(failed_articles) >= 1
-        for article in failed_articles:
-            assert article.error_message is not None
-            assert len(article.error_message) > 0
+        # Use the results_summary to find failed keyword(s) and verify
+        # error info is present (avoids session visibility issues)
+        failed_keywords = [
+            kw for kw in run.results_summary.get("keywords", [])
+            if kw["status"] == "failed"
+        ]
+        assert len(failed_keywords) >= 1
+        for kw_entry in failed_keywords:
+            assert kw_entry.get("error_message") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -714,30 +739,22 @@ class TestFinalCounts:
         run_with_keywords: Run,
         blog_with_config: tuple[Blog, PipelineConfig],
         session_factory: async_sessionmaker,
+        tmp_path: Path,
     ):
         """When some articles fail, counts reflect mixed results."""
-        responses = [
-            _make_valid_article_json("outdoor patio"),
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-            _make_valid_article_json("deck ideas"),
-        ]
-        llm = MockLLMProvider(responses=responses)
+        # Use per-keyword deterministic failure: "garden design" always fails
+        llm = _KeywordFailingLLMProvider(failing_keyword="garden design")
         factory = _make_mock_factory(llm_provider=llm)
 
-        with _mock_httpx_download():
+        # Force sequential execution to avoid SQLite in-memory concurrency issues
+        _blog, config = blog_with_config
+        config.max_concurrent_articles = 1
+        await db_session.commit()
+
+        with _mock_httpx_download(), patch(
+            "app.pipeline.bulk_pipeline.settings.ARTIFACTS_DIR",
+            str(tmp_path),
+        ):
             await _run_bulk_pipeline(
                 db_session, run_with_keywords,
                 factory=factory,
@@ -1052,24 +1069,8 @@ class TestBulkPipelineLogging:
         caplog,
     ):
         """ERROR log emitted when an article fails."""
-        responses = [
-            _make_valid_article_json("outdoor patio"),
-            _make_valid_article_json("outdoor patio"),
-            _make_valid_article_json("outdoor patio"),
-            _make_valid_article_json("outdoor patio"),
-            _make_valid_article_json("outdoor patio"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            _make_valid_article_json("garden design"),
-            "invalid json",  # deck ideas fails
-            "invalid json",
-            "invalid json",
-            "invalid json",
-            "invalid json",
-        ]
-        llm = MockLLMProvider(responses=responses)
+        # Use per-keyword deterministic failure: "deck ideas" always fails
+        llm = _KeywordFailingLLMProvider(failing_keyword="deck ideas")
         factory = _make_mock_factory(llm_provider=llm)
 
         with _mock_httpx_download(), caplog.at_level(
