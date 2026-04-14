@@ -4,3 +4,7 @@ export { default as Badge } from './Badge';
 export { default as Input } from './Input';
 export { default as Select } from './Select';
 export { default as Textarea } from './Textarea';
+export { Table, TableHeader, TableBody, TableRow, TableHeaderCell, TableCell } from './Table';
+export { default as Toggle } from './Toggle';
+export { default as ProgressBar, type ProgressBarStep, type StepStatus } from './ProgressBar';
+export { default as ProgressRing } from './ProgressRing';
