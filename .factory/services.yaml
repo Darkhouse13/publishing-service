@@ -1,21 +1,14 @@
 commands:
-  install: cd backend && pip install -e ".[dev]"
-  typecheck: cd backend && python3 -m mypy app tests
-  test: cd backend && python3 -m pytest tests/ -v
-  lint: cd backend && python3 -m ruff check app tests
-  alembic_upgrade: cd backend && python3 -m alembic upgrade head
-  alembic_migrate: cd backend && python3 -m alembic revision --autogenerate -m
+  install: cd frontend && npm install
+  typecheck: cd frontend && npx tsc --noEmit
+  build: cd frontend && npm run build
+  lint: cd frontend && npm run lint
+  dev: cd frontend && npm run dev
 
 services:
-  api:
-    start: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000
-    stop: lsof -ti :8000 | xargs kill
-    healthcheck: curl -sf http://localhost:8000/api/v1/health
-    port: 8000
-    depends_on: []
-
-  worker:
-    start: cd backend && celery -A app.tasks.celery_app worker --loglevel=info --concurrency=1
-    stop: pkill -f "celery worker"
-    healthcheck: celery -A app.tasks.celery_app inspect ping
+  frontend:
+    start: cd frontend && npm run dev
+    stop: lsof -ti :3000 | xargs kill
+    healthcheck: curl -sf http://localhost:3000
+    port: 3000
     depends_on: []
