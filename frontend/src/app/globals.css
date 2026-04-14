@@ -1,3 +1,58 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ============================================================
+   Neo-Brutalist Design System — Global Styles
+   ============================================================ */
+
+/* --- Grid Pattern Background ---------------------------------- */
+.bg-grid-pattern {
+  background-image:
+    linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* --- Custom Scrollbar ----------------------------------------- */
+::-webkit-scrollbar {
+  width: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f2f1eb;
+  border-left: 3px solid #000000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #000000;
+  border: 2px solid #f2f1eb;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #333333;
+}
+
+/* --- Sharp-Blink Animation ------------------------------------ */
+@keyframes sharp-blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-sharp-blink {
+  animation: sharp-blink 1.5s steps(1, start) infinite;
+}
+
+/* --- Base Layer Overrides ------------------------------------- */
+@layer base {
+  body {
+    @apply bg-panel text-base font-sans antialiased;
+  }
+}
