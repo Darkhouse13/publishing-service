@@ -8,3 +8,6 @@ export { Table, TableHeader, TableBody, TableRow, TableHeaderCell, TableCell } f
 export { default as Toggle } from './Toggle';
 export { default as ProgressBar, type ProgressBarStep, type StepStatus } from './ProgressBar';
 export { default as ProgressRing } from './ProgressRing';
+export { default as StatCard } from './StatCard';
+export { default as TabBar } from './TabBar';
+export { default as LiveDot } from './LiveDot';
