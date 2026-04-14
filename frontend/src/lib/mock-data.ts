@@ -614,6 +614,21 @@ export const mockActivityItems: ActivityItem[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Vibe options for article creation
+// ---------------------------------------------------------------------------
+
+export const VIBE_OPTIONS = [
+  'Professional',
+  'Casual',
+  'Informative',
+  'Conversational',
+  'Inspirational',
+  'Humorous',
+] as const;
+
+export type VibeOption = (typeof VIBE_OPTIONS)[number];
+
+// ---------------------------------------------------------------------------
 // Helper: get blog name by ID
 // ---------------------------------------------------------------------------
 

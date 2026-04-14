@@ -188,6 +188,8 @@ export interface Article {
 export interface ArticleCreate {
   blog_id: string;
   topic: string;
+  vibe?: string;
+  focus_keyword?: string;
 }
 
 // ---------------------------------------------------------------------------
