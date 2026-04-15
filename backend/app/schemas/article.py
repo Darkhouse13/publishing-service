@@ -11,10 +11,13 @@ class ArticleCreate(BaseModel):
     """Schema for creating a new article.
 
     Requires a valid ``blog_id`` and a ``topic`` string.
+    Optionally accepts ``vibe`` and ``focus_keyword`` for pipeline control.
     """
 
     blog_id: uuid.UUID
     topic: str = Field(..., min_length=1)
+    vibe: Optional[str] = Field(default=None, max_length=500)
+    focus_keyword: Optional[str] = Field(default=None, max_length=200)
 
 
 class ArticleResponse(BaseModel):

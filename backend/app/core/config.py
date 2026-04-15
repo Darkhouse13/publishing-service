@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Redis / Celery --------------------------------------------------------
     REDIS_URL: Optional[str] = None
 
+    # CORS ------------------------------------------------------------------
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost"]
+
     # Runtime directories ----------------------------------------------------
     # backend/app/core/config.py -> backend/
     _BACKEND_ROOT: str = str(Path(__file__).resolve().parent.parent.parent)

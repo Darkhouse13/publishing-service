@@ -51,6 +51,7 @@ class BlogUpdate(BaseModel):
     url: Optional[str] = Field(None, min_length=1, max_length=2048)
     wp_username: Optional[str] = Field(None, min_length=1, max_length=255)
     wp_application_password: Optional[str] = Field(None, min_length=1, max_length=1024)
+    is_active: Optional[bool] = None
 
     # New pipeline configuration fields (all optional for partial updates)
     profile_prompt: Optional[str] = Field(None, max_length=65535)

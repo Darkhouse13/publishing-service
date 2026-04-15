@@ -52,6 +52,8 @@ async def create_article(
         run_id=None,
         keyword=payload.topic,
         status="pending",
+        focus_keyword=payload.focus_keyword,
+        brain_output={"vibe": payload.vibe} if payload.vibe else None,
     )
     db.add(article)
     await db.flush()
