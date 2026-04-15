@@ -1,69 +1,49 @@
-# User Testing — Frontend Dashboard
+# User Testing — Publishing Service
 
 ## Validation Surface
 
-The user testing validator verifies Mission 3's frontend dashboard by opening pages in a browser (agent-browser) and visually confirming design tokens and functionality.
+The user testing validator verifies the Docker full-stack integration and frontend-backend wiring.
 
-## Tool: agent-browser
+## Tool: agent-browser + curl
 
-Used for all user-facing verification. The validator opens `http://localhost:3000` pages in a headless browser and inspects rendered HTML/CSS.
+- `curl` for API smoke tests (health, blogs, articles, credentials, runs)
+- `agent-browser` for frontend page rendering verification in Docker context
 
-## Pages to Test
+## Smoke Test Flows
 
-All 11 pages must render and navigate correctly:
-- `/dashboard` — stat cards, recent activity, sidebar nav
-- `/connections` — blog card grid, toggle, add button
-- `/connections/new` — add blog form
-- `/connections/[id]` — 5 tabs, save functionality
-- `/credentials` — table with masked secrets, status badges
-- `/runs` — filter bar, runs table, blinking dots
-- `/runs/new` — create run form
-- `/runs/[id]` — progress ring, article cards with step bars
-- `/articles` — articles table
-- `/articles/new` — single article form
-- `/articles/[id]` — two-column layout, SEO sidebar panels
+After `docker compose up -d`:
+1. Health: `curl http://localhost/api/v1/health` → 200
+2. Frontend: `curl http://localhost/dashboard` → 200
+3. Blogs list: `curl http://localhost/api/v1/blogs` → 200
+4. Create blog: `curl -X POST http://localhost/api/v1/blogs` with blog data → 201
+5. Credentials: `curl http://localhost/api/v1/credentials` → 200
+6. Runs: `curl http://localhost/api/v1/runs` → 200
+7. Articles: `curl http://localhost/api/v1/articles` → 200
+8. Cleanup: `curl -X DELETE http://localhost/api/v1/blogs/{id}` → 204
 
-## Design Token Verification
+## Docker Stack Verification
 
-Every page must pass these checks:
-- **Zero border-radius**: DevTools inspection shows `border-radius: 0px` on all elements
-- **Colors**: base=#000000, panel=#f2f1eb, accent=#ffcc00, muted=#666666, error=#ff4444
-- **Borders**: 3px solid black on cards, inputs, buttons
-- **Shadows**: solid offset shadows (4px, 8px, 12px)
-- **Typography**: headings font-weight 900, body font-weight 700, ALL labels uppercase
-- **Active nav**: yellow (#ffcc00) background on current page nav item
+- All 6 services must report healthy via `docker compose ps`
+- nginx must route `/api/*` to api:8000
+- nginx must route `/*` to frontend:3000
+- Frontend at `http://localhost/dashboard` must render the neo-brutalist dashboard
 
-## Functional Verification
+## Pages to Test (via agent-browser in Docker context)
 
-### Navigation
-- Sidebar nav highlights active item
-- Pages navigate correctly via sidebar links
-- Back buttons and breadcrumbs work
+- `http://localhost/dashboard` — stat cards, sidebar nav (verify design tokens)
+- `http://localhost/connections` — blog card grid
+- `http://localhost/articles` — articles table
+- `http://localhost/articles/new` — create article form
 
-### Forms
-- Required field validation blocks empty submission
-- Error messages appear inline (not toasts) in error color
-- Submit fires correct API path (visible in network tab)
-
-### Polling
-- Active runs pages auto-refresh every 3-5 seconds
-- Progress ring and step bars update without page reload
-- Polling stops when run reaches terminal state
-
-### Empty States
-- No data pages show appropriate "NO X" messages in muted color
+Note: In Docker, agent-browser tests the running nginx-served frontend. Port is 80 (or ${PORT:-80}).
 
 ## Resource Cost Classification
 
 - Each agent-browser instance: ~300 MB RAM
-- Frontend dev server: ~200 MB RAM
-- Max concurrent validators: **3** (on this machine with ~6GB available headroom after baseline)
-- Validation parallelization: validate 3 pages concurrently, sequential across milestones
+- Docker stack (6 services): ~1.5 GB RAM total
+- Max concurrent validators: **2** (Docker stack + agent-browser is memory-intensive)
+- Validate sequentially for Docker-based testing
 
-## Mock Data
+## External APIs
 
-Pages render with SWR fallback data. Mock data in `src/lib/mock-data.ts` provides realistic fixtures. No backend needed for visual validation — API paths visible in network tab even if they 404.
-
-## Skipping External APIs
-
-The validation does NOT test external APIs (DeepSeek, Fal.ai). Only frontend UI and API integration paths are verified. External API behavior is out of scope for this mission.
+Validation does NOT test external APIs (DeepSeek, Fal.ai, WordPress.com). Only local stack API integration paths are verified.

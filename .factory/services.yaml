@@ -4,6 +4,7 @@ commands:
   build: cd frontend && npm run build
   lint: cd frontend && npm run lint
   dev: cd frontend && npm run dev
+  test: cd backend && python3 -m pytest tests/ -v
 
 services:
   frontend:
@@ -12,3 +13,45 @@ services:
     healthcheck: curl -sf http://localhost:3000
     port: 3000
     depends_on: []
+
+  api:
+    start: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    stop: lsof -ti :8000 | xargs kill
+    healthcheck: curl -sf http://localhost:8000/api/v1/health
+    port: 8000
+    depends_on: []
+
+  db:
+    start: docker compose up -d db
+    stop: docker compose stop db
+    healthcheck: pg_isready -h localhost -p 5432
+    port: 5432
+    depends_on: []
+
+  redis:
+    start: docker compose up -d redis
+    stop: docker compose stop redis
+    healthcheck: redis-cli ping
+    port: 6379
+    depends_on: []
+
+  nginx:
+    start: docker compose up -d nginx
+    stop: docker compose stop nginx
+    healthcheck: curl -sf http://localhost:80/api/v1/health
+    port: 80
+    depends_on: [api, frontend]
+
+  docker-stack:
+    start: docker compose build && docker compose up -d
+    stop: docker compose down
+    healthcheck: curl -sf http://localhost:80/api/v1/health
+    port: 80
+    depends_on: []
+
+  smoke-test:
+    start: bash scripts/smoke-test.sh http://localhost
+    stop: ""
+    healthcheck: ""
+    port: 0
+    depends_on: [docker-stack]

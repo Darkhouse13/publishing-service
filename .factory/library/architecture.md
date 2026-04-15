@@ -89,6 +89,35 @@ frontend/
 4. Form submissions call API directly
 5. Polling for active runs uses SWR with conditional `refreshInterval`
 
+## Docker Full-Stack Deployment
+
+### Architecture
+```
+Browser → nginx:80 → frontend:3000 (Next.js standalone)
+                  → api:8000 (FastAPI)
+                         → db:5432 (PostgreSQL)
+                         → redis:6379 (Redis)
+              worker (Celery) → redis → api
+```
+
+### Services
+- **nginx:alpine** — Reverse proxy on port 80. Routes `/api/*` → `api:8000`, everything else → `frontend:3000`.
+- **frontend** — Next.js standalone build. Receives requests via nginx; API calls proxied through Next.js rewrites or direct to nginx `/api/*`.
+- **api** — FastAPI with Alembic migrations run on startup via `entrypoint.sh`. Serves `/api/v1/*`.
+- **worker** — Celery worker consuming from Redis. No migration entrypoint (depends on api having started).
+- **db** — PostgreSQL 16-alpine with healthcheck.
+- **redis** — Redis 7-alpine with healthcheck.
+
+### CORS
+FastAPI CORSMiddleware configured with `CORS_ORIGINS` from environment. In Docker, defaults to `["http://localhost", "http://frontend:3000", "http://nginx"]`.
+
+### Environment Variables (Production)
+- `DATABASE_URL=postgresql+asyncpg://publishing:{password}@db:5432/publishing`
+- `REDIS_URL=redis://redis:6379/0`
+- `ENCRYPTION_KEY` — Fernet key for credential encryption
+- `CORS_ORIGINS` — JSON array of allowed origins
+- `POSTGRES_USER`, `POSTGRES_PASSWORD` — DB credentials
+
 ## State Management
 - SWR for server state (blogs, runs, articles, credentials)
 - React `useState` for local UI state (tab selection, form fields)

@@ -1,42 +1,57 @@
 # Environment
 
-## Frontend Setup
+## Docker Full-Stack Deployment
 
+```bash
+# Production (all 6 services via nginx on port 80)
+cp .env.example .env
+# Edit .env: set POSTGRES_PASSWORD and ENCRYPTION_KEY
+docker compose build
+docker compose up -d
+
+# Verify
+bash scripts/smoke-test.sh http://localhost
+```
+
+## Local Development (without Docker)
+
+**Frontend:**
 ```bash
 cd frontend
 npm install
-cp .env.local.example .env.local
 npm run dev
+# http://localhost:3000 — proxies /api/* to http://localhost:8000
 ```
 
-Frontend runs on `http://localhost:3000`.
-
-## Backend Connection
-
-The frontend proxies API requests through Next.js rewrites to avoid CORS:
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:8000` (FastAPI)
-
-Next.js config rewrites `/api/:path*` to `${NEXT_PUBLIC_API_URL}/api/:path*`.
+**Backend:**
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload --port 8000
+# http://localhost:8000/api/v1/...
+```
 
 ## Environment Variables
 
-`frontend/.env.local`:
-```
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
+**Root .env.example:**
+- `POSTGRES_USER`, `POSTGRES_PASSWORD` — DB credentials
+- `ENCRYPTION_KEY` — Fernet key (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
+- `PORT` — nginx port (default 80)
+- `CORS_ORIGINS` — JSON array of allowed origins
 
-## Mock Data Strategy
-
-All pages use SWR `fallback` prop for mock data during development. Mock data in `src/lib/mock-data.ts` has realistic fixtures for all entity types. API client is typed and works with both mock data and real backend.
+**Frontend (.env.local):**
+- `NEXT_PUBLIC_API_URL=http://localhost:8000` (dev) or `http://api:8000` (Docker)
 
 ## Ports
 
-- Frontend: 3000 (never start on other ports)
-- Backend: 8000 (read-only, do not modify)
+- 80 — nginx reverse proxy (Docker production)
+- 3000 — Next.js frontend (dev) or frontend:3000 (Docker internal)
+- 5432 — PostgreSQL (dev Docker exposed)
+- 6379 — Redis (dev Docker exposed)
+- 8000 — FastAPI (dev) or api:8000 (Docker internal)
 
 ## Off-Limits
 
-- `backend/` directory — do not read or modify
-- `src/` directory — do not read or modify
-- Root-level configs (docker-compose, .env, .env.example)
+- `src/` — old prototype code
+- `backend/app/` — do not modify unless in scope
+- Root-level `tests/`, `docs/`, `assets/`
