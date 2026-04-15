@@ -196,6 +196,67 @@ The frontend proxies API requests through Next.js rewrites to avoid CORS:
 
 For development without the backend running, all SWR hooks include `fallbackData` with realistic mock data.
 
+## Docker Full-Stack Deployment
+
+A complete `docker compose up` starts the entire stack behind an nginx reverse proxy.
+
+### Services
+
+| Service | Image | Port | Description |
+|---------|-------|------|-------------|
+| nginx | nginx:alpine | 80 | Reverse proxy routing /api/* → api:8000, /* → frontend:3000 |
+| frontend | Next.js standalone | 3000 (internal) | Next.js 14 dashboard |
+| api | FastAPI + Alembic | 8000 (internal) | Backend REST API |
+| worker | Celery + Redis | — | Background job processor |
+| db | postgres:16-alpine | 5432 | PostgreSQL database |
+| redis | redis:7-alpine | 6379 | Redis message broker |
+
+### Quick Start
+
+```bash
+# 1. Configure environment
+cp .env.example .env
+# Edit .env: set POSTGRES_PASSWORD and ENCRYPTION_KEY
+
+# 2. Build and start all services
+docker compose build
+docker compose up -d
+
+# 3. Verify the stack
+bash scripts/smoke-test.sh http://localhost
+```
+
+### Environment Variables
+
+```bash
+POSTGRES_USER=publishing
+POSTGRES_PASSWORD=CHANGE_ME_TO_A_STRONG_PASSWORD
+ENCRYPTION_KEY=CHANGE_ME_GENERATE_A_FERNET_KEY
+PORT=80
+```
+
+Generate an ENCRYPTION_KEY:
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+### Development (with hot reload)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+This overlay exposes ports 80, 3000, 8000, 5432, 6379 and mounts source volumes for hot reload.
+
+### CORS
+
+FastAPI CORS middleware is configured via `CORS_ORIGINS`. In Docker, defaults to:
+```
+["http://localhost", "http://frontend:3000", "http://nginx"]
+```
+
+Override via the `CORS_ORIGINS` environment variable.
+
 ## Troubleshooting
 
 ### Streamlit shutdown traceback on Windows
